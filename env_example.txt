@@ -1,0 +1,30 @@
+# Renommer ce fichier en .env et renseigner les valeurs
+# Ne JAMAIS commiter .env dans git — ajouter .env au .gitignore
+
+# Django
+SECRET_KEY=changez-moi-chaine-aleatoire-longue-50-caracteres-minimum
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# PostgreSQL
+DB_NAME=pea_db
+DB_USER=pea_user
+DB_PASSWORD=votre_mot_de_passe
+DB_HOST=localhost
+DB_PORT=5432
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# EODHD — tier gratuit 20 req/jour — https://eodhd.com/register
+EODHD_API_KEY=votre_cle_eodhd
+EODHD_QUOTA_JOUR=20
+
+# Anthropic — https://console.anthropic.com
+ANTHROPIC_API_KEY=sk-ant-votre_cle
+
+# NewsAPI — tier gratuit 100 req/jour — https://newsapi.org
+NEWSAPI_KEY=votre_cle_newsapi
+
+# FMP — tier gratuit 250 req/jour — https://financialmodelingprep.com
+FMP_API_KEY=votre_cle_fmp
