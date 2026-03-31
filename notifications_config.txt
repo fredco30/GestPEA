@@ -1,0 +1,89 @@
+# ============================================================
+# À AJOUTER dans .env
+# ============================================================
+
+# URL du dashboard (pour les liens dans les emails)
+DASHBOARD_URL=http://localhost:3000
+
+# Email destinataire des alertes (ton adresse perso)
+EMAIL_DESTINATAIRE=fred@mondomaine.fr
+
+# SMTP — exemple avec Gmail (recommandé : créer un mot de passe d'application)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=ton.adresse@gmail.com
+EMAIL_HOST_PASSWORD=mot_de_passe_application_gmail
+EMAIL_USE_TLS=True
+
+# OU avec OVH (si tu as une adresse @tondomaine.fr sur OVH)
+# EMAIL_HOST=ssl0.ovh.net
+# EMAIL_PORT=465
+# EMAIL_HOST_USER=pea@tondomaine.fr
+# EMAIL_HOST_PASSWORD=ton_mot_de_passe_ovh
+# EMAIL_USE_SSL=True
+
+# Telegram — voir instructions ci-dessous
+TELEGRAM_BOT_TOKEN=123456789:AAFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TELEGRAM_CHAT_ID=123456789
+
+
+# ============================================================
+# À AJOUTER dans pea_project/settings.py
+# ============================================================
+
+"""
+# --- Email ---
+EMAIL_BACKEND      = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST         = env('EMAIL_HOST',         default='smtp.gmail.com')
+EMAIL_PORT         = env.int('EMAIL_PORT',     default=587)
+EMAIL_HOST_USER    = env('EMAIL_HOST_USER',    default='')
+EMAIL_HOST_PASSWORD= env('EMAIL_HOST_PASSWORD',default='')
+EMAIL_USE_TLS      = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_USE_SSL      = env.bool('EMAIL_USE_SSL', default=False)
+
+EMAIL_DESTINATAIRE = env('EMAIL_DESTINATAIRE', default='')
+DASHBOARD_URL      = env('DASHBOARD_URL',      default='http://localhost:3000')
+
+# --- Telegram ---
+TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN', default='')
+TELEGRAM_CHAT_ID   = env('TELEGRAM_CHAT_ID',   default='')
+"""
+
+
+# ============================================================
+# GUIDE : Créer un bot Telegram en 3 étapes
+# ============================================================
+
+"""
+1. Ouvrir Telegram → chercher @BotFather → /newbot
+   → Donner un nom au bot (ex: "MonPEA Alertes")
+   → Récupérer le token : 123456789:AAFxxxxxxxx
+   → Coller dans TELEGRAM_BOT_TOKEN
+
+2. Démarrer une conversation avec ton bot (lui envoyer /start)
+
+3. Récupérer ton CHAT_ID :
+   → Ouvrir dans le navigateur :
+     https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates
+   → Chercher "chat":{"id": XXXXXXX}
+   → Coller ce nombre dans TELEGRAM_CHAT_ID
+
+4. Tester l'envoi depuis Python :
+   from app.services.notifications import _envoyer_telegram_texte
+   _envoyer_telegram_texte("Test alerte PEA — configuration OK ✓")
+"""
+
+
+# ============================================================
+# GUIDE : Mot de passe application Gmail
+# ============================================================
+
+"""
+Pour utiliser Gmail comme serveur SMTP :
+1. Activer la validation en 2 étapes sur ton compte Google
+2. Aller sur https://myaccount.google.com/apppasswords
+3. Créer un mot de passe d'application "Mail" / "Autre (nom personnalisé)"
+4. Copier le mot de passe de 16 caractères dans EMAIL_HOST_PASSWORD
+
+Ne jamais utiliser ton vrai mot de passe Gmail dans settings.py.
+"""
