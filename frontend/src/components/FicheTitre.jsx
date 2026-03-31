@@ -8,10 +8,7 @@
 import React, { useState } from 'react'
 import { useTitre } from '../hooks/useTitre'
 import GraphiqueTechnique from './GraphiqueTechnique'
-import BadgeSentiment from './BadgeSentiment'
-import CarteSignaux from './CarteSignaux'
-import FeedArticles from './FeedArticles'
-import CarteAlertes from './CarteAlertes'
+import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
 export default function FicheTitre({ ticker }) {
   const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode } = useTitre(ticker)
@@ -62,9 +59,9 @@ export default function FicheTitre({ ticker }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
         <MetriqueCard label="RSI (14)" valeur={dernier?.rsi_14 ? Number(dernier.rsi_14).toFixed(1) : '—'}
           couleur={getRsiCouleur(dernier?.rsi_14)} />
-        <MetriqueCard label="MACD" valeur={dernier?.macd_hist
+        <MetriqueCard label="MACD" valeur={dernier?.macd_hist != null
           ? `${Number(dernier.macd_hist) >= 0 ? '+' : ''}${Number(dernier.macd_hist).toFixed(2)}` : '—'}
-          couleur={Number(dernier?.macd_hist) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'} />
+          couleur={dernier?.macd_hist != null ? (Number(dernier.macd_hist) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : undefined} />
         <MetriqueCard label="MM 50j vs prix" valeur={
           dernier?.mm_50 && dernier?.cloture
             ? `${((Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100).toFixed(1)}%`

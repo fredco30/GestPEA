@@ -1,15 +1,8 @@
 """
-app/api/urls.py  +  pea_project/urls.py
-----------------------------------------
-Routing URL complet pour l'API REST.
-
-Copier app/api/urls.py dans app/api/urls.py
-Copier pea_project/urls.py dans pea_project/urls.py
+app/api/urls.py
+----------------
+Routing URL pour l'API REST du projet PEA.
 """
-
-# =============================================================================
-# app/api/urls.py
-# =============================================================================
 
 from django.urls import path
 from app.api import views
@@ -72,18 +65,3 @@ urlpatterns = [
          views.QuotaView.as_view(),
          name='quota'),
 ]
-
-
-# =============================================================================
-# pea_project/urls.py
-# =============================================================================
-
-"""
-from django.contrib import admin
-from django.urls import path, include
-
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include('app.api.urls')),
-]
-"""

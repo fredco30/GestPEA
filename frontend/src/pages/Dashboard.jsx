@@ -2,17 +2,14 @@
  * frontend/src/pages/Dashboard.jsx
  * ----------------------------------
  * Page principale de l'application.
- * Gère la navigation entre les onglets Portefeuille et Surveillance,
- * et la sélection du titre actif.
+ * Gere la navigation entre les onglets Portefeuille et Surveillance,
+ * et la selection du titre actif.
  */
 
 import React, { useState, useEffect } from 'react'
-import { getTitres, getDashboard, updateStatutAlerte } from '../api/client'
+import { getTitres, getDashboard } from '../api/client'
 import FicheTitre from '../components/FicheTitre'
-import ListeSurveillance from '../components/ListeSurveillance'
-import PanneauAlertes from '../components/PanneauAlertes'
-import BadgeSentiment from '../components/BadgeSentiment'
-import QuotaBadge from '../components/QuotaBadge'
+import { ListeSurveillance, PanneauAlertes, QuotaBadge } from '../components/utilitaires'
 
 const ONGLETS_NAV = [
   { id: 'portefeuille', label: 'Mes actions' },
@@ -77,14 +74,14 @@ export default function Dashboard() {
           <div style={{ padding: '12px 16px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
             <StatLigne label="Valeur totale" valeur={
               dashboard.valeur_totale_portefeuille
-                ? `${Number(dashboard.valeur_totale_portefeuille).toLocaleString('fr-FR')} €`
-                : '—'
+                ? `${Number(dashboard.valeur_totale_portefeuille).toLocaleString('fr-FR')} \u20ac`
+                : '\u2014'
             } />
             <StatLigne
               label="Variation aujourd'hui"
               valeur={dashboard.variation_jour_portefeuille
-                ? `${Number(dashboard.variation_jour_portefeuille) >= 0 ? '+' : ''}${Number(dashboard.variation_jour_portefeuille).toLocaleString('fr-FR')} €`
-                : '—'
+                ? `${Number(dashboard.variation_jour_portefeuille) >= 0 ? '+' : ''}${Number(dashboard.variation_jour_portefeuille).toLocaleString('fr-FR')} \u20ac`
+                : '\u2014'
               }
               couleur={Number(dashboard.variation_jour_portefeuille) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
             />
@@ -114,7 +111,7 @@ export default function Dashboard() {
             />
           ))}
 
-          {/* Séparateur + titres du portefeuille */}
+          {/* Separateur + titres du portefeuille */}
           {onglet === 'portefeuille' && titresPf.length > 0 && (
             <>
               <div style={{ padding: '10px 16px 4px', fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -212,7 +209,7 @@ function NavTitre({ titre, actif, onClick }) {
         <div style={{ fontSize: 11, color: titre.variation_jour >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
           {titre.variation_jour != null
             ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
-            : '—'}
+            : '\u2014'}
         </div>
       </div>
       {sentiment && (
@@ -237,7 +234,7 @@ function StatLigne({ label, valeur, couleur }) {
 function EcranChargement() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
-      Chargement du portefeuille…
+      Chargement du portefeuille...
     </div>
   )
 }

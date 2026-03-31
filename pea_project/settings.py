@@ -27,7 +27,9 @@ env = environ.Env(
     DEBUG=(bool, False),
     EODHD_QUOTA_JOUR=(int, 20),
 )
-environ.Env.read_env(BASE_DIR / '.env')
+env_file = BASE_DIR / '.env'
+if env_file.exists():
+    env.read_env(str(env_file))
 
 # ---------------------------------------------------------------------------
 # SÉCURITÉ
@@ -57,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -67,6 +70,24 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'pea_project.urls'
+
+WSGI_APPLICATION = 'pea_project.wsgi.application'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
 
 # ---------------------------------------------------------------------------
 # BASE DE DONNÉES
@@ -85,6 +106,25 @@ DATABASES = {
         },
     }
 }
+
+# ---------------------------------------------------------------------------
+# AUTH PASSWORD VALIDATORS
+# ---------------------------------------------------------------------------
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
 
 # ---------------------------------------------------------------------------
 # CELERY — tâches asynchrones et scheduler
@@ -153,7 +193,7 @@ CELERY_BEAT_SCHEDULE = {
 
 # EODHD — cours, fondamentaux, screener, news (tier gratuit : 20 req/jour)
 EODHD_API_KEY    = env('EODHD_API_KEY', default='')
-EODHD_QUOTA_JOUR = env('EODHD_QUOTA_JOUR', default=20)
+EODHD_QUOTA_JOUR = env.int('EODHD_QUOTA_JOUR', default=20)
 
 # Anthropic Claude — scoring sentiment + rédaction alertes
 ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY', default='')
@@ -163,6 +203,27 @@ NEWSAPI_KEY = env('NEWSAPI_KEY', default='')
 
 # FMP — fondamentaux complémentaires (tier gratuit : 250 req/jour)
 FMP_API_KEY = env('FMP_API_KEY', default='')
+
+# ---------------------------------------------------------------------------
+# EMAIL
+# ---------------------------------------------------------------------------
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = env('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_USE_SSL = env.bool('EMAIL_USE_SSL', default=False)
+EMAIL_DESTINATAIRE = env('EMAIL_DESTINATAIRE', default='')
+DASHBOARD_URL = env('DASHBOARD_URL', default='http://localhost:3000')
+
+# ---------------------------------------------------------------------------
+# TELEGRAM
+# ---------------------------------------------------------------------------
+
+TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN', default='')
+TELEGRAM_CHAT_ID = env('TELEGRAM_CHAT_ID', default='')
 
 # ---------------------------------------------------------------------------
 # DJANGO REST FRAMEWORK
@@ -194,6 +255,9 @@ CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
 # ---------------------------------------------------------------------------
 # LOGGING
 # ---------------------------------------------------------------------------
+
+LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
 
 LOGGING = {
     'version': 1,

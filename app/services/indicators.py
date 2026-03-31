@@ -17,6 +17,7 @@ Appelé par :
 """
 
 import logging
+import math
 from datetime import date, timedelta
 
 import pandas as pd
@@ -84,8 +85,8 @@ def calculate_indicators(titre, nb_jours: int = None) -> int:
     macd_df = ta.macd(df['close'], fast=12, slow=26, signal=9)
     if macd_df is not None and not macd_df.empty:
         df['macd']        = macd_df.iloc[:, 0]  # MACD line
-        df['macd_signal'] = macd_df.iloc[:, 1]  # Signal line
-        df['macd_hist']   = macd_df.iloc[:, 2]  # Histogramme
+        df['macd_signal'] = macd_df.iloc[:, 2]  # Signal line (MACDs)
+        df['macd_hist']   = macd_df.iloc[:, 1]  # Histogram (MACDh)
     else:
         df['macd'] = df['macd_signal'] = df['macd_hist'] = None
 
@@ -184,7 +185,6 @@ def _safe(val):
     if val is None:
         return None
     try:
-        import math
         if math.isnan(float(val)):
             return None
         return round(float(val), 4)

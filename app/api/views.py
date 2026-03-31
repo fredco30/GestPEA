@@ -6,35 +6,35 @@ Vues Django REST Framework pour l'API du projet PEA.
 Endpoints :
 
   Titres
-    GET    /api/titres/                    → liste tous les titres actifs
-    POST   /api/titres/                    → ajouter un titre
-    GET    /api/titres/{ticker}/           → fiche complète (cours + fondamentaux + sentiment)
-    PATCH  /api/titres/{ticker}/           → modifier statut, notes, nb_actions…
-    DELETE /api/titres/{ticker}/           → archiver (soft delete)
-    GET    /api/titres/{ticker}/ohlc/      → bougies OHLC pour Lightweight Charts
-    POST   /api/titres/{ticker}/importer/  → déclencher import historique bulk
+    GET    /api/titres/                    -> liste tous les titres actifs
+    POST   /api/titres/                    -> ajouter un titre
+    GET    /api/titres/{ticker}/           -> fiche complete
+    PATCH  /api/titres/{ticker}/           -> modifier statut, notes, nb_actions...
+    DELETE /api/titres/{ticker}/           -> archiver (soft delete)
+    GET    /api/titres/{ticker}/ohlc/      -> bougies OHLC pour Lightweight Charts
+    POST   /api/titres/{ticker}/importer/  -> declencer import historique bulk
 
   Alertes
-    GET    /api/alertes/                   → toutes les alertes (filtrables)
-    GET    /api/alertes/{id}/              → détail d'une alerte
-    PATCH  /api/alertes/{id}/statut/       → marquer vue/archivée + note
+    GET    /api/alertes/                   -> toutes les alertes (filtrables)
+    GET    /api/alertes/{id}/              -> detail d'une alerte
+    PATCH  /api/alertes/{id}/statut/       -> marquer vue/archivee + note
 
   Sentiment
-    GET    /api/sentiment/{ticker}/        → scores sentiment + articles récents
+    GET    /api/sentiment/{ticker}/        -> scores sentiment + articles recents
 
   Dashboard
-    GET    /api/dashboard/                 → données agrégées page d'accueil
+    GET    /api/dashboard/                 -> donnees agregees page d'accueil
 
   Profil
-    GET    /api/profil/                    → profil investisseur PEA
-    PATCH  /api/profil/                    → modifier le profil
+    GET    /api/profil/                    -> profil investisseur PEA
+    PATCH  /api/profil/                    -> modifier le profil
 
   Quota
-    GET    /api/quota/                     → état des quotas API du jour
+    GET    /api/quota/                     -> etat des quotas API du jour
 
   Config alertes
-    GET    /api/titres/{ticker}/config/    → config alertes pour un titre
-    PATCH  /api/titres/{ticker}/config/    → modifier la config
+    GET    /api/titres/{ticker}/config/    -> config alertes pour un titre
+    PATCH  /api/titres/{ticker}/config/    -> modifier la config
 """
 
 import logging
@@ -72,13 +72,13 @@ logger = logging.getLogger(__name__)
 class TitreViewSet(ViewSet):
     """
     ViewSet principal pour les titres.
-    Gère portefeuille ET surveillance via le champ `statut`.
+    Gere portefeuille ET surveillance via le champ `statut`.
     """
 
     def list(self, request):
         """
         GET /api/titres/
-        Paramètres query : ?statut=portefeuille|surveillance|tous
+        Parametres query : ?statut=portefeuille|surveillance|tous
         """
         statut = request.query_params.get('statut', 'tous')
 
@@ -88,7 +88,7 @@ class TitreViewSet(ViewSet):
             qs = qs.filter(statut=statut)
         elif statut != 'tous':
             return Response(
-                {'erreur': "statut doit être 'portefeuille', 'surveillance' ou 'tous'"},
+                {'erreur': "statut doit etre 'portefeuille', 'surveillance' ou 'tous'"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -98,7 +98,7 @@ class TitreViewSet(ViewSet):
     def create(self, request):
         """
         POST /api/titres/
-        Ajoute un titre et déclenche l'import historique en arrière-plan.
+        Ajoute un titre et declenche l'import historique en arriere-plan.
         """
         serializer = TitreCreateSerializer(data=request.data)
         if not serializer.is_valid():
@@ -106,14 +106,14 @@ class TitreViewSet(ViewSet):
 
         titre = serializer.save()
 
-        # Créer une AlerteConfig par défaut pour ce titre
+        # Creer une AlerteConfig par defaut pour ce titre
         AlerteConfig.objects.get_or_create(titre=titre)
 
-        # Déclencher l'import historique OHLC en tâche Celery
+        # Declencer l'import historique OHLC en tache Celery
         from app.tasks import import_historique_task
         import_historique_task.delay(titre.ticker)
 
-        logger.info(f"[API] Titre ajouté : {titre.ticker} — import historique lancé")
+        logger.info(f"[API] Titre ajoute : {titre.ticker} — import historique lance")
 
         return Response(
             TitreDetailSerializer(titre).data,
@@ -123,7 +123,7 @@ class TitreViewSet(ViewSet):
     def retrieve(self, request, pk=None):
         """
         GET /api/titres/{ticker}/
-        Fiche complète : cours 90j, fondamentaux, sentiment 30j, alertes, articles.
+        Fiche complete : cours 90j, fondamentaux, sentiment 30j, alertes, articles.
         """
         titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
         serializer = TitreDetailSerializer(titre)
@@ -132,16 +132,16 @@ class TitreViewSet(ViewSet):
     def partial_update(self, request, pk=None):
         """
         PATCH /api/titres/{ticker}/
-        Modifier statut, notes, nb_actions, prix_revient_moyen, lot…
+        Modifier statut, notes, nb_actions, prix_revient_moyen, lot...
         """
         titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
 
-        # Champs autorisés en modification
-        champs_autorisés = {
+        # Champs autorises en modification
+        champs_autorises = {
             'statut', 'notes', 'nb_actions',
             'prix_revient_moyen', 'date_premier_achat', 'lot',
         }
-        data_filtree = {k: v for k, v in request.data.items() if k in champs_autorisés}
+        data_filtree = {k: v for k, v in request.data.items() if k in champs_autorises}
 
         serializer = TitreCreateSerializer(titre, data=data_filtree, partial=True)
         if not serializer.is_valid():
@@ -159,7 +159,7 @@ class TitreViewSet(ViewSet):
         titre.actif  = False
         titre.statut = 'archive'
         titre.save(update_fields=['actif', 'statut'])
-        logger.info(f"[API] Titre archivé : {titre.ticker}")
+        logger.info(f"[API] Titre archive : {titre.ticker}")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['get'], url_path='ohlc')
@@ -167,7 +167,7 @@ class TitreViewSet(ViewSet):
         """
         GET /api/titres/{ticker}/ohlc/
         Bougies OHLC au format Lightweight Charts.
-        Paramètres : ?periode=1S|1M|3M|6M|1A|3A|MAX  (défaut 1A)
+        Parametres : ?periode=1S|1M|3M|6M|1A|3A|MAX  (defaut 1A)
         """
         titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
 
@@ -183,10 +183,10 @@ class TitreViewSet(ViewSet):
             date__gte=depuis
         ).order_by('date')
 
-        # Format séparé : OHLC pour les chandeliers + volumes + indicateurs
+        # Format separe : OHLC pour les chandeliers + volumes + indicateurs
         ohlc_data   = PrixJournalierOHLCSerializer(bougies, many=True).data
 
-        # Indicateurs en séries séparées (format Lightweight Charts line series)
+        # Indicateurs en series separees (format Lightweight Charts line series)
         indicateurs = {
             'mm20':      [],
             'mm50':      [],
@@ -225,13 +225,13 @@ class TitreViewSet(ViewSet):
     def importer(self, request, pk=None):
         """
         POST /api/titres/{ticker}/importer/
-        Relance l'import historique bulk (utile si données manquantes).
+        Relance l'import historique bulk (utile si donnees manquantes).
         """
         titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
         from app.tasks import import_historique_task
         import_historique_task.delay(titre.ticker)
         return Response({
-            'message': f"Import historique lancé pour {titre.ticker}",
+            'message': f"Import historique lance pour {titre.ticker}",
             'ticker':  titre.ticker,
         })
 
@@ -261,7 +261,7 @@ class TitreViewSet(ViewSet):
 class AlerteListView(APIView):
     """
     GET /api/alertes/
-    Paramètres : ?statut=nouvelle|vue|archivee  ?niveau=forte|moderee|surveillance
+    Parametres : ?statut=nouvelle|vue|archivee  ?niveau=forte|moderee|surveillance
                  ?ticker=MC.PA  ?depuis=YYYY-MM-DD  ?limit=20
     """
 
@@ -273,7 +273,12 @@ class AlerteListView(APIView):
         niveau = request.query_params.get('niveau')
         ticker = request.query_params.get('ticker')
         depuis = request.query_params.get('depuis')
-        limit  = int(request.query_params.get('limit', 50))
+
+        # FIX: proteger int() contre les valeurs invalides
+        try:
+            limit = int(request.query_params.get('limit', 50))
+        except (ValueError, TypeError):
+            limit = 50
 
         if statut:
             qs = qs.filter(statut=statut)
@@ -300,7 +305,7 @@ class AlerteDetailView(APIView):
 
 
 class AlerteStatutView(APIView):
-    """PATCH /api/alertes/{id}/statut/ — marquer vue, archivée, ajouter une note"""
+    """PATCH /api/alertes/{id}/statut/ — marquer vue, archivee, ajouter une note"""
 
     def patch(self, request, pk):
         alerte     = get_object_or_404(Alerte, pk=pk)
@@ -318,16 +323,22 @@ class AlerteStatutView(APIView):
 class SentimentView(APIView):
     """
     GET /api/sentiment/{ticker}/
-    Retourne les scores sentiment + articles récents scorés.
-    Paramètres : ?jours=7|14|30 (défaut 14)
+    Retourne les scores sentiment + articles recents scores.
+    Parametres : ?jours=7|14|30 (defaut 14)
     """
 
     def get(self, request, ticker):
         titre  = get_object_or_404(Titre, ticker=ticker.upper(), actif=True)
-        nb_jours = int(request.query_params.get('jours', 14))
-        depuis   = date.today() - timedelta(days=nb_jours)
 
-        # Scores par source sur la période
+        # FIX: proteger int() contre les valeurs invalides
+        try:
+            nb_jours = int(request.query_params.get('jours', 14))
+        except (ValueError, TypeError):
+            nb_jours = 14
+
+        depuis = date.today() - timedelta(days=nb_jours)
+
+        # Scores par source sur la periode
         scores_presse = ScoreSentiment.objects.filter(
             titre=titre, source='presse', date__gte=depuis
         ).order_by('date')
@@ -343,14 +354,14 @@ class SentimentView(APIView):
         # Dernier score global
         dernier_global = scores_global.order_by('-date').first()
 
-        # Articles récents scorés
+        # Articles recents scores
         articles = Article.objects.filter(
             titre=titre,
             date_pub__date__gte=depuis,
             score_sentiment__isnull=False,
         ).order_by('-date_pub')[:20]
 
-        # Topics les plus fréquents
+        # Topics les plus frequents
         from collections import Counter
         tous_tags = []
         for a in articles:
@@ -393,7 +404,7 @@ class SentimentView(APIView):
 class DashboardView(APIView):
     """
     GET /api/dashboard/
-    Données agrégées pour la page d'accueil.
+    Donnees agregees pour la page d'accueil.
     """
 
     def get(self, request):
@@ -409,6 +420,7 @@ class DashboardView(APIView):
                 valeur_totale += Decimal(str(vp))
             # Variation du jour
             derniere = t.prix_journaliers.order_by('-date').first()
+            # FIX: utiliser [1:2].first() correctement — c'est deja correct ici
             avant_hier = t.prix_journaliers.order_by('-date')[1:2].first()
             if derniere and avant_hier and t.nb_actions:
                 variation_totale += (
@@ -481,7 +493,7 @@ class ProfilView(APIView):
 # ---------------------------------------------------------------------------
 
 class QuotaView(APIView):
-    """GET /api/quota/ — état des quotas API du jour"""
+    """GET /api/quota/ — etat des quotas API du jour"""
 
     def get(self, request):
         quotas = ApiQuota.objects.filter(date=date.today())

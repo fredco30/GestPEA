@@ -208,13 +208,20 @@ class EODHDClient:
 
             # EODHD fournit adjusted_close (ajusté splits/dividendes) — à privilégier
             cloture = self._dec(row.get("adjusted_close")) or self._dec(row.get("close"))
+            ouverture = self._dec(row.get("open"))
+            haut = self._dec(row.get("high"))
+            bas = self._dec(row.get("low"))
+
+            # Skip rows with missing required OHLC fields
+            if any(v is None for v in (ouverture, haut, bas, cloture)):
+                continue
 
             a_creer.append(PrixJournalier(
                 titre     = titre_obj,
                 date      = d,
-                ouverture = self._dec(row.get("open")),
-                haut      = self._dec(row.get("high")),
-                bas       = self._dec(row.get("low")),
+                ouverture = ouverture,
+                haut      = haut,
+                bas       = bas,
                 cloture   = cloture,
                 volume    = self._int(row.get("volume"), 0),
             ))
@@ -250,14 +257,21 @@ class EODHDClient:
         d        = date.fromisoformat(derniere["date"])
         cloture  = (self._dec(derniere.get("adjusted_close"))
                     or self._dec(derniere.get("close")))
+        ouverture = self._dec(derniere.get("open"))
+        haut = self._dec(derniere.get("high"))
+        bas = self._dec(derniere.get("low"))
+
+        if any(v is None for v in (ouverture, haut, bas, cloture)):
+            logger.warning("Données OHLC incomplètes pour %s le %s", ticker, d)
+            return None
 
         obj, created = PrixJournalier.objects.update_or_create(
             titre = titre_obj,
             date  = d,
             defaults={
-                "ouverture": self._dec(derniere.get("open")),
-                "haut":      self._dec(derniere.get("high")),
-                "bas":       self._dec(derniere.get("low")),
+                "ouverture": ouverture,
+                "haut":      haut,
+                "bas":       bas,
                 "cloture":   cloture,
                 "volume":    self._int(derniere.get("volume"), 0),
             }
@@ -334,7 +348,7 @@ class EODHDClient:
             bpa_old = bpa(annees[-4])
             if bpa_rec and bpa_old and bpa_old > 0:
                 croissance_bpa_3ans = round(
-                    ((bpa_rec / bpa_old) ** Decimal("0.3333") - 1) * 100, 2
+                    ((bpa_rec / bpa_old) ** (Decimal(1) / Decimal(3)) - 1) * 100, 2
                 )
 
         # --- Dates dividende ---
@@ -365,7 +379,7 @@ class EODHDClient:
                 "dette_nette_ebitda":   dette_nette_ebitda,
                 "cash_flow_libre":      self._int(highlights.get("FreeCashflow")),
                 # Croissance
-                "croissance_bpa_1an":   self._dec(highlights.get("EPSEstimateNextYear")),
+                "croissance_bpa_1an":   self._calc_croissance_bpa_1an(highlights),
                 "croissance_bpa_3ans":  croissance_bpa_3ans,
                 "croissance_ca_1an":    self._dec(highlights.get("QuarterlyRevenueGrowthYOY")),
                 # Dividende
@@ -390,6 +404,14 @@ class EODHDClient:
         # Met à jour les métadonnées de base du Titre si manquantes
         self._sync_titre(titre_obj, raw.get("General", {}) or {})
         return fond
+
+    def _calc_croissance_bpa_1an(self, highlights: dict) -> Optional[Decimal]:
+        """Calcule la croissance BPA 1 an en % : (estimate / actual - 1) * 100."""
+        eps_next = self._dec(highlights.get("EPSEstimateNextYear"))
+        eps_actual = self._dec(highlights.get("EarningsShare"))
+        if eps_next is not None and eps_actual is not None and eps_actual > 0:
+            return round((eps_next / eps_actual - 1) * 100, 2)
+        return None
 
     def _sync_titre(self, titre_obj: Titre, general: dict) -> None:
         """Complète les métadonnées du Titre depuis General EODHD."""

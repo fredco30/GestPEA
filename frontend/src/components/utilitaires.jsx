@@ -1,13 +1,11 @@
 /**
  * frontend/src/components/utilitaires.jsx
  * -----------------------------------------
- * Composants utilitaires partagés dans tout le dashboard.
- * Exporter chacun individuellement depuis leur propre fichier en prod,
- * ici regroupés pour lisibilité.
+ * Composants utilitaires partages dans tout le dashboard.
  */
 
 import React, { useState, useEffect } from 'react'
-import { getAlertes, getTitres, updateStatutAlerte, getQuota } from '../api/client'
+import { getAlertes, getTitres, updateStatutAlerte } from '../api/client'
 
 // ---------------------------------------------------------------------------
 // BadgeSentiment
@@ -15,13 +13,14 @@ import { getAlertes, getTitres, updateStatutAlerte, getQuota } from '../api/clie
 export function BadgeSentiment({ score, label }) {
   const s = Number(score)
   let bg, color
-  if (s >= 0.2)       { bg = 'var(--color-background-success)'; color = 'var(--color-text-success)' }
-  else if (s >= -0.2) { bg = 'var(--color-background-warning)'; color = 'var(--color-text-warning)' }
-  else                { bg = 'var(--color-background-danger)';  color = 'var(--color-text-danger)'  }
+  if (isNaN(s))         { bg = 'var(--color-background-warning)'; color = 'var(--color-text-warning)' }
+  else if (s >= 0.2)    { bg = 'var(--color-background-success)'; color = 'var(--color-text-success)' }
+  else if (s >= -0.2)   { bg = 'var(--color-background-warning)'; color = 'var(--color-text-warning)' }
+  else                  { bg = 'var(--color-background-danger)';  color = 'var(--color-text-danger)'  }
 
   return (
     <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500, background: bg, color }}>
-      Sentiment {label || (s >= 0.2 ? 'haussier' : s >= -0.2 ? 'neutre' : 'baissier')}
+      Sentiment {label || (isNaN(s) ? 'neutre' : s >= 0.2 ? 'haussier' : s >= -0.2 ? 'neutre' : 'baissier')}
     </span>
   )
 }
@@ -30,7 +29,6 @@ export function BadgeSentiment({ score, label }) {
 // CarteSignaux
 // ---------------------------------------------------------------------------
 export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, ticker }) {
-  const sentimentActuel = sentiments30j[sentiments30j.length - 1]
   const sentimentPresse = sentiments30j.filter(s => s.source === 'presse').slice(-1)[0]
   const sentimentSocial = sentiments30j.filter(s => s.source === 'social').slice(-1)[0]
 
@@ -43,7 +41,7 @@ export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, t
       {/* Barres sentiment */}
       {[
         { label: 'Presse & analystes', score: sentimentPresse?.score },
-        { label: 'Réseaux sociaux',    score: sentimentSocial?.score },
+        { label: 'Reseaux sociaux',    score: sentimentSocial?.score },
       ].map(({ label, score }) => score != null && (
         <div key={label} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -88,10 +86,12 @@ function LigneSignal({ signal }) {
   const couleur = signal.direction === 'haussier' ? 'var(--color-text-success)'
     : signal.direction === 'baissier' ? 'var(--color-text-danger)'
     : 'var(--color-text-secondary)'
+  // FIX: CSS variable + hex opacity ne fonctionne pas (ex: `${couleur}18`).
+  // Utiliser une opacity sur le background a la place.
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '0.5px solid var(--color-border-tertiary)', fontSize: 12 }}>
       <span style={{ color: 'var(--color-text-secondary)' }}>{signal.description || signal.type_signal_display}</span>
-      <span style={{ color: couleur, fontWeight: 500, fontSize: 11, padding: '2px 8px', background: `${couleur}18`, borderRadius: 20 }}>
+      <span style={{ color: couleur, fontWeight: 500, fontSize: 11, padding: '2px 8px', background: 'var(--color-background-secondary)', borderRadius: 20 }}>
         {signal.direction}
       </span>
     </div>
@@ -105,13 +105,13 @@ export function FeedArticles({ articles = [] }) {
   return (
     <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-lg)', padding: '14px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Actualités récentes</span>
-        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>analysées par IA</span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Actualites recentes</span>
+        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>analysees par IA</span>
       </div>
 
       {articles.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '12px 0' }}>
-          Aucun article collecté aujourd'hui
+          Aucun article collecte aujourd'hui
         </div>
       ) : (
         articles.slice(0, 6).map(art => (
@@ -142,7 +142,7 @@ function ArticleItem({ article }) {
         </a>
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
           <span>{article.source}</span>
-          <span>·</span>
+          <span>&middot;</span>
           <span>{new Date(article.date_pub).toLocaleDateString('fr-FR')}</span>
           <span style={{ marginLeft: 'auto', background: bgBadge, color: colorBadge, padding: '1px 6px', borderRadius: 20, fontWeight: 500 }}>
             {score >= 0 ? '+' : ''}{score.toFixed(2)}
@@ -160,7 +160,7 @@ export function CarteAlertes({ alertes = [], ticker }) {
   return (
     <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-lg)', padding: '14px 16px' }}>
       <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: 'var(--color-text-primary)' }}>
-        Alertes récentes
+        Alertes recentes
       </div>
       {alertes.map(a => <AlerteItem key={a.id} alerte={a} />)}
     </div>
@@ -208,7 +208,7 @@ export function PanneauAlertes() {
       </div>
 
       {loading ? (
-        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Chargement…</div>
+        <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Chargement...</div>
       ) : alertes.length === 0 ? (
         <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13, textAlign: 'center', padding: 40 }}>
           Aucune alerte {filtre !== 'toutes' ? filtre : ''}
@@ -244,7 +244,7 @@ function AlerteItem({ alerte, onMarquerVue }) {
           {alerte.nom_court || alerte.ticker}
         </span>
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: bgNiveau, color: couleurNiveau, fontWeight: 500 }}>
-          {alerte.niveau} · {alerte.score_confluence}/10
+          {alerte.niveau} &middot; {alerte.score_confluence}/10
         </span>
         <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
           {new Date(alerte.date_detection).toLocaleDateString('fr-FR')}
@@ -281,7 +281,7 @@ export function ListeSurveillance() {
       .catch(() => setLoading(false))
   }, [])
 
-  if (loading) return <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Chargement…</div>
+  if (loading) return <div style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>Chargement...</div>
 
   return (
     <div>
@@ -289,7 +289,7 @@ export function ListeSurveillance() {
         Titres en surveillance ({titres.length})
       </div>
       <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-lg)', overflow: 'hidden' }}>
-        {/* En-tête tableau */}
+        {/* En-tete tableau */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 100px 90px', gap: 0, padding: '8px 16px', background: 'var(--color-background-secondary)', fontSize: 11, color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
           <span>Titre</span>
           <span style={{ textAlign: 'right' }}>Cours</span>
@@ -297,7 +297,7 @@ export function ListeSurveillance() {
           <span style={{ textAlign: 'right' }}>Sentiment</span>
           <span style={{ textAlign: 'right' }}>RSI</span>
         </div>
-        {titres.map((t, i) => <LigneSurveillance key={t.ticker} titre={t} alterné={i % 2 === 1} />)}
+        {titres.map((t, i) => <LigneSurveillance key={t.ticker} titre={t} alterne={i % 2 === 1} />)}
         {titres.length === 0 && (
           <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 13, color: 'var(--color-text-tertiary)' }}>
             Aucun titre en surveillance. Ajouter des titres depuis la barre de recherche.
@@ -308,7 +308,7 @@ export function ListeSurveillance() {
   )
 }
 
-function LigneSurveillance({ titre, alterné }) {
+function LigneSurveillance({ titre, alterne }) {
   const dernier    = titre.dernier_cours
   const sentiment  = titre.sentiment_global
   const variation  = titre.variation_jour
@@ -317,34 +317,34 @@ function LigneSurveillance({ titre, alterné }) {
     <div style={{
       display: 'grid', gridTemplateColumns: '1fr 90px 90px 100px 90px',
       padding: '10px 16px',
-      background: alterné ? 'var(--color-background-secondary)' : 'transparent',
+      background: alterne ? 'var(--color-background-secondary)' : 'transparent',
       borderBottom: '0.5px solid var(--color-border-tertiary)',
       alignItems: 'center',
     }}>
       <div>
         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>{titre.nom_court || titre.ticker}</div>
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{titre.ticker} · {titre.secteur}</div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{titre.ticker} &middot; {titre.secteur}</div>
       </div>
       <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 500 }}>
-        {dernier ? `${Number(dernier.cloture).toFixed(2)} €` : '—'}
+        {dernier ? `${Number(dernier.cloture).toFixed(2)} \u20AC` : '\u2014'}
       </div>
       <div style={{ textAlign: 'right', fontSize: 12, color: variation >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
-        {variation != null ? `${variation >= 0 ? '+' : ''}${variation.toFixed(2)}%` : '—'}
+        {variation != null ? `${variation >= 0 ? '+' : ''}${variation.toFixed(2)}%` : '\u2014'}
       </div>
       <div style={{ textAlign: 'right' }}>
         {sentiment
           ? <BadgeSentiment score={Number(sentiment.score)} label={sentiment.label} />
-          : <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>—</span>}
+          : <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{'\u2014'}</span>}
       </div>
       <div style={{ textAlign: 'right', fontSize: 12, color: getRsiColor(dernier?.rsi_14) }}>
-        {dernier?.rsi_14 ? Number(dernier.rsi_14).toFixed(1) : '—'}
+        {dernier?.rsi_14 ? Number(dernier.rsi_14).toFixed(1) : '\u2014'}
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// QuotaBadge — état quota API dans la sidebar
+// QuotaBadge — etat quota API dans la sidebar
 // ---------------------------------------------------------------------------
 export function QuotaBadge({ quota }) {
   const pct   = quota.pct_utilise

@@ -1,12 +1,8 @@
 /**
  * frontend/src/api/client.js
  * --------------------------
- * Client HTTP centralisé pour tous les appels vers l'API Django REST.
+ * Client HTTP centralise pour tous les appels vers l'API Django REST.
  * Toutes les fonctions retournent des Promises.
- *
- * Usage :
- *   import { getTitres, getTitreDetail, getOHLC } from './api/client'
- *   const titres = await getTitres('portefeuille')
  */
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api'
@@ -58,15 +54,15 @@ const del    = (url)        => request(url, { method: 'DELETE' })
 export const getTitres = (statut = 'tous') =>
   get('/titres/', { statut })
 
-/** Fiche complète : cours 90j, fondamentaux, sentiment 30j, alertes, articles */
+/** Fiche complete : cours 90j, fondamentaux, sentiment 30j, alertes, articles */
 export const getTitreDetail = (ticker) =>
   get(`/titres/${ticker}/`)
 
-/** Ajouter un titre (déclenche l'import historique en arrière-plan) */
+/** Ajouter un titre (declenche l'import historique en arriere-plan) */
 export const createTitre = (data) =>
   post('/titres/', data)
 
-/** Modifier un titre (statut, notes, nb_actions, prix_revient_moyen…) */
+/** Modifier un titre (statut, notes, nb_actions, prix_revient_moyen...) */
 export const updateTitre = (ticker, data) =>
   patch(`/titres/${ticker}/`, data)
 
@@ -104,11 +100,11 @@ export const updateConfigAlertes = (ticker, data) =>
 export const getAlertes = (params = {}) =>
   get('/alertes/', params)
 
-/** Détail d'une alerte (avec signaux) */
+/** Detail d'une alerte (avec signaux) */
 export const getAlerteDetail = (id) =>
   get(`/alertes/${id}/`)
 
-/** Marquer une alerte vue/archivée + ajouter une note */
+/** Marquer une alerte vue/archivee + ajouter une note */
 export const updateStatutAlerte = (id, data) =>
   patch(`/alertes/${id}/statut/`, data)
 
@@ -117,7 +113,7 @@ export const updateStatutAlerte = (id, data) =>
 // ---------------------------------------------------------------------------
 
 /**
- * Scores sentiment + articles récents pour un ticker
+ * Scores sentiment + articles recents pour un ticker
  * jours = 7 | 14 | 30
  */
 export const getSentiment = (ticker, jours = 14) =>

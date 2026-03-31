@@ -394,7 +394,7 @@ SIGNAUX DÉTECTÉS :
 {json.dumps(signaux, ensure_ascii=False, indent=2)}
 
 FONDAMENTAUX :
-{json.dumps({k: str(v) if v else 'N/D' for k, v in fond_ctx.items()}, ensure_ascii=False, indent=2)}
+{json.dumps({k: str(v) if v is not None else 'N/D' for k, v in fond_ctx.items()}, ensure_ascii=False, indent=2)}
 
 SENTIMENT ACTUEL :
 {json.dumps(sent_ctx, ensure_ascii=False, indent=2)}
