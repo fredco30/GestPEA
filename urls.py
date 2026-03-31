@@ -1,0 +1,89 @@
+"""
+app/api/urls.py  +  pea_project/urls.py
+----------------------------------------
+Routing URL complet pour l'API REST.
+
+Copier app/api/urls.py dans app/api/urls.py
+Copier pea_project/urls.py dans pea_project/urls.py
+"""
+
+# =============================================================================
+# app/api/urls.py
+# =============================================================================
+
+from django.urls import path
+from app.api import views
+
+urlpatterns = [
+
+    # --- Titres ---
+    path('titres/',
+         views.TitreViewSet.as_view({'get': 'list', 'post': 'create'}),
+         name='titre-list'),
+
+    path('titres/<str:pk>/',
+         views.TitreViewSet.as_view({
+             'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'
+         }),
+         name='titre-detail'),
+
+    path('titres/<str:pk>/ohlc/',
+         views.TitreViewSet.as_view({'get': 'ohlc'}),
+         name='titre-ohlc'),
+
+    path('titres/<str:pk>/importer/',
+         views.TitreViewSet.as_view({'post': 'importer'}),
+         name='titre-importer'),
+
+    path('titres/<str:pk>/config/',
+         views.TitreViewSet.as_view({'get': 'config_alertes', 'patch': 'config_alertes'}),
+         name='titre-config'),
+
+    # --- Alertes ---
+    path('alertes/',
+         views.AlerteListView.as_view(),
+         name='alerte-list'),
+
+    path('alertes/<int:pk>/',
+         views.AlerteDetailView.as_view(),
+         name='alerte-detail'),
+
+    path('alertes/<int:pk>/statut/',
+         views.AlerteStatutView.as_view(),
+         name='alerte-statut'),
+
+    # --- Sentiment ---
+    path('sentiment/<str:ticker>/',
+         views.SentimentView.as_view(),
+         name='sentiment'),
+
+    # --- Dashboard ---
+    path('dashboard/',
+         views.DashboardView.as_view(),
+         name='dashboard'),
+
+    # --- Profil ---
+    path('profil/',
+         views.ProfilView.as_view(),
+         name='profil'),
+
+    # --- Quota ---
+    path('quota/',
+         views.QuotaView.as_view(),
+         name='quota'),
+]
+
+
+# =============================================================================
+# pea_project/urls.py
+# =============================================================================
+
+"""
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include('app.api.urls')),
+]
+"""
