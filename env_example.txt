@@ -20,8 +20,8 @@ REDIS_URL=redis://localhost:6379/0
 EODHD_API_KEY=votre_cle_eodhd
 EODHD_QUOTA_JOUR=20
 
-# Anthropic — https://console.anthropic.com
-ANTHROPIC_API_KEY=sk-ant-votre_cle
+# Mistral AI — https://console.mistral.ai
+MISTRAL_API_KEY=votre_cle_mistral
 
 # NewsAPI — tier gratuit 100 req/jour — https://newsapi.org
 NEWSAPI_KEY=votre_cle_newsapi

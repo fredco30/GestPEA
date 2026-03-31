@@ -1,7 +1,7 @@
 """
 services/scoring_llm.py
 ------------------------
-Service d'appel à Claude API (Anthropic) pour deux usages :
+Service d'appel à Mistral AI pour deux usages :
 
   1. scorer_articles(article_ids)
      → Analyse le sentiment de chaque article (-1 à +1)
@@ -15,11 +15,10 @@ Service d'appel à Claude API (Anthropic) pour deux usages :
      → Respecte le profil PEA long terme (pas de conseil, orientation renforcement)
      → Met à jour Alerte.texte_ia + Alerte.fiabilite_historique
 
-Modèle utilisé : claude-haiku-4-5-20251001 (rapide + économique pour le scoring en lot)
-Coût estimé : ~0.001 € par article scoré, ~0.005 € par alerte rédigée
+Modèle utilisé : mistral-small-latest (rapide + économique pour le scoring en lot)
 
 Dépendances :
-  pip install anthropic
+  pip install mistralai
 """
 
 import json
@@ -35,8 +34,8 @@ logger = logging.getLogger(__name__)
 # CONSTANTES
 # ---------------------------------------------------------------------------
 
-MODEL_SCORING  = "claude-haiku-4-5-20251001"   # rapide + pas cher pour le scoring en lot
-MODEL_ALERTE   = "claude-sonnet-4-6"            # meilleure qualité rédactionnelle pour les alertes
+MODEL_SCORING  = "mistral-small-latest"   # rapide + économique pour le scoring en lot
+MODEL_ALERTE   = "mistral-large-latest"   # meilleure qualité rédactionnelle pour les alertes
 MAX_TOKENS     = 800
 BATCH_SIZE     = 5    # nb d'articles scorés par appel API (économie de tokens)
 
@@ -50,26 +49,26 @@ TOPICS_CONNUS = [
 
 
 # ---------------------------------------------------------------------------
-# CLIENT ANTHROPIC
+# CLIENT MISTRAL
 # ---------------------------------------------------------------------------
 
 def _get_client():
-    """Retourne une instance du client Anthropic."""
+    """Retourne une instance du client Mistral."""
     try:
-        import anthropic
+        from mistralai import Mistral
     except ImportError:
         raise ImportError(
-            "La librairie 'anthropic' n'est pas installée. "
-            "Exécuter : pip install anthropic"
+            "La librairie 'mistralai' n'est pas installée. "
+            "Exécuter : pip install mistralai"
         )
 
-    api_key = getattr(settings, 'ANTHROPIC_API_KEY', '')
+    api_key = getattr(settings, 'MISTRAL_API_KEY', '')
     if not api_key:
         raise ValueError(
-            "ANTHROPIC_API_KEY manquant dans settings.py. "
-            "Ajouter : ANTHROPIC_API_KEY = 'sk-ant-...'"
+            "MISTRAL_API_KEY manquant dans settings.py. "
+            "Ajouter : MISTRAL_API_KEY = '...'"
         )
-    return anthropic.Anthropic(api_key=api_key)
+    return Mistral(api_key=api_key)
 
 
 # ---------------------------------------------------------------------------
@@ -158,17 +157,19 @@ Règles de scoring :
 - Réponds UNIQUEMENT avec le JSON, sans texte avant ou après"""
 
     try:
-        response = client.messages.create(
+        response = client.chat.complete(
             model=MODEL_SCORING,
             max_tokens=MAX_TOKENS,
-            system=(
-                "Tu es un analyste financier expert en analyse de sentiment sur les marchés boursiers européens. "
-                "Tu réponds toujours en JSON valide uniquement, sans markdown, sans explication."
-            ),
-            messages=[{"role": "user", "content": prompt_user}],
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un analyste financier expert en analyse de sentiment sur les marchés boursiers européens. "
+                    "Tu réponds toujours en JSON valide uniquement, sans markdown, sans explication."
+                )},
+                {"role": "user", "content": prompt_user},
+            ],
         )
 
-        contenu = response.content[0].text.strip()
+        contenu = response.choices[0].message.content.strip()
 
         # Nettoyer si le modèle a quand même ajouté des backticks
         if contenu.startswith("```"):
@@ -424,19 +425,21 @@ CONTRAINTES ABSOLUES :
 
     try:
         client   = _get_client()
-        response = client.messages.create(
+        response = client.chat.complete(
             model=MODEL_ALERTE,
             max_tokens=600,
-            system=(
-                "Tu es un outil d'aide à la décision pour investisseurs particuliers. "
-                "Tu fournis des observations factuelles et contextualisées sur les marchés financiers. "
-                "Tu ne donnes jamais de conseils d'investissement. "
-                "Tu rédiges en français, de manière concise et professionnelle."
-            ),
-            messages=[{"role": "user", "content": prompt_user}],
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un outil d'aide à la décision pour investisseurs particuliers. "
+                    "Tu fournis des observations factuelles et contextualisées sur les marchés financiers. "
+                    "Tu ne donnes jamais de conseils d'investissement. "
+                    "Tu rédiges en français, de manière concise et professionnelle."
+                )},
+                {"role": "user", "content": prompt_user},
+            ],
         )
 
-        texte = response.content[0].text.strip()
+        texte = response.choices[0].message.content.strip()
 
         # S'assurer que le disclaimer est présent
         disclaimer = "— Cette observation ne constitue pas un conseil d'investissement."
@@ -593,16 +596,18 @@ FORMAT ATTENDU :
 
     try:
         client   = _get_client()
-        response = client.messages.create(
+        response = client.chat.complete(
             model=MODEL_ALERTE,
             max_tokens=400,
-            system=(
-                "Tu es un assistant d'aide à la gestion de portefeuille boursier. "
-                "Tu rédiges des synthèses factuelles en français, sans conseils d'investissement."
-            ),
-            messages=[{"role": "user", "content": prompt_user}],
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un assistant d'aide à la gestion de portefeuille boursier. "
+                    "Tu rédiges des synthèses factuelles en français, sans conseils d'investissement."
+                )},
+                {"role": "user", "content": prompt_user},
+            ],
         )
-        return response.content[0].text.strip()
+        return response.choices[0].message.content.strip()
 
     except Exception as e:
         logger.error(f"[LLM] generer_digest_hebdomadaire — erreur : {e}", exc_info=True)

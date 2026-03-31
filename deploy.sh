@@ -85,7 +85,7 @@ pip install -q \
     django-environ \
     celery \
     redis \
-    anthropic \
+    mistralai \
     requests \
     pandas \
     pandas-ta \

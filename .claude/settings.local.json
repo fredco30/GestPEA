@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"icacls ''C:\\\\Users\\\\projets\\\\GestPEA\\\\pea_deploy.py'' /grant ''Fred:F''\")",
+      "Bash(powershell -Command \"Start-Process icacls -ArgumentList ''C:\\\\Users\\\\projets\\\\GestPEA /grant Fred:\\(OI\\)\\(CI\\)F /T'' -Verb RunAs -Wait\")",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}

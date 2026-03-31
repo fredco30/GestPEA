@@ -8,7 +8,7 @@ En développement : copier .env.example → .env et renseigner les clés.
 En production    : définir les variables dans l'environnement du VPS OVH.
 
 Installation des dépendances :
-    pip install django djangorestframework celery redis anthropic requests
+    pip install django djangorestframework celery redis mistralai requests
                 pandas pandas-ta python-dateutil django-environ psycopg2-binary
 """
 
@@ -195,8 +195,8 @@ CELERY_BEAT_SCHEDULE = {
 EODHD_API_KEY    = env('EODHD_API_KEY', default='')
 EODHD_QUOTA_JOUR = env.int('EODHD_QUOTA_JOUR', default=20)
 
-# Anthropic Claude — scoring sentiment + rédaction alertes
-ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY', default='')
+# Mistral AI — scoring sentiment + rédaction alertes
+MISTRAL_API_KEY = env('MISTRAL_API_KEY', default='')
 
 # NewsAPI — presse française (tier gratuit : 100 req/jour)
 NEWSAPI_KEY = env('NEWSAPI_KEY', default='')
