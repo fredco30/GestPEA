@@ -2,7 +2,7 @@
 
 > Fichier de référence généré et maintenu au fil des échanges avec Claude.  
 > Objectif : disposer d'un historique complet des décisions d'architecture pour lancer le codage sans avoir à tout réexpliquer.  
-> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — APIs intégrées (EODHD + NewsAPI + FMP) + auto-remplissage IA**
+> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — Phase 1 terminée — Phase 2 IA avancée en cours**
 
 ---
 
@@ -362,7 +362,9 @@ pea_project/
 | `update.sh` | Script mise à jour + commandes de maintenance | Racine du projet |
 | `newsapi_client.py` | Client NewsAPI : recherche articles FR, headlines, import en base, quota | `app/services/newsapi_client.py` |
 | `fmp.py` | Client FMP (stable API) : profil, ratios TTM, métriques clés, objectif analystes | `app/services/fmp.py` |
-| `auto_fill.py` | Auto-remplissage titre : métadonnées EODHD/FMP, éligibilité PEA, seuils alerte par secteur | `app/services/auto_fill.py` |
+| `auto_fill.py` | Auto-remplissage titre : résolution ticker/ISIN/nom, métadonnées EODHD/FMP, éligibilité PEA, seuils alerte par secteur, nom court intelligent | `app/services/auto_fill.py` |
+| `rss_news.py` | Collecteur RSS : Google News (1 an historique), Boursorama, Zonebourse — gratuit, illimité | `app/services/rss_news.py` |
+| `reddit_client.py` | Collecteur Reddit : r/bourse, r/vosfinances, r/investir — API JSON publique, sans OAuth | `app/services/reddit_client.py` |
 
 ### Détails scoring LLM (`scoring_llm.py`)
 
@@ -374,16 +376,29 @@ pea_project/
 - **Fiabilité historique** : calcule le % de patterns similaires ayant été suivis d'une hausse >2% en 10 jours
 - **Digest hebdomadaire** : synthèse vendredi soir — `generer_digest_hebdomadaire()`
 
-### Chaîne Celery complète (ordre d'exécution chaque soir)
+### Chaîne Celery complète (planning journalier)
 
 ```
+09h00  fetch_news_gratuites_task   RSS (Google News, Boursorama, Zonebourse) + Reddit
+                                    → scorer_articles_task → generer_sentiment_mixte
+13h00  fetch_news_gratuites_task   idem (2e passage)
 18h30  fetch_cours_eod_task        1 req EODHD batch (toutes les bougies du jour)
-19h00  fetch_fondamentaux_lot_task  1 req/titre du lot A ou B
-20h00  fetch_news_task             1 req EODHD mutualisée → lance scorer_articles_task
-21h00  run_indicateurs_task        0 req API (pandas-ta en local)
-         └→ detect_signaux_task   détecte RSI/MACD/MM/Bollinger/volume
+19h00  fetch_fondamentaux_lot_task  EODHD lot A/B + FMP complément
+20h00  fetch_news_task             EODHD + NewsAPI + RSS + Reddit
+                                    → scorer_articles_task → generer_sentiment_mixte
+21h00  run_indicateurs_task        pandas-ta en local (RSI, MACD, MM, Bollinger)
+         └→ detect_signaux_task   détecte signaux techniques
               └→ run_confluence_task  calcule score et crée Alerte
-                   └→ scorer_alerte_task  génère texte IA via Claude API
+                   └→ scorer_alerte_task  génère texte IA via Mistral
+Ven 19h  digest_hebdomadaire_task  synthèse semaine par Mistral
+```
+
+### Tâches déclenchées manuellement
+
+```
+analyse_complete_task(ticker)   à la création d'un titre — import OHLCV + indicateurs
+                                + news 1 an (toutes sources) + scoring + rapport IA
+POST /api/titres/{ticker}/analyser/   bouton "Analyser IA" dans le dashboard
 ```
 
 ---
@@ -413,6 +428,71 @@ pea_project/
 | 19 | **Déploiement VPS** — 51.210.8.158, Gunicorn:8002, Redis:6380, PostgreSQL partagé | ✅ Fait |
 | 20 | **Auto-remplissage titre par IA** — saisir juste le ticker, l'IA complète place, pays, secteur, éligibilité PEA et seuils d'alerte automatiquement | ✅ Fait |
 | 21 | **Intégration APIs serveur** — services NewsAPI + FMP + auto-fill déployés sur VPS | ✅ Fait |
+| 22 | **Multi-sources news** — Google News RSS (1 an historique) + Boursorama + Zonebourse + Reddit (r/bourse, r/vosfinances) | ✅ Fait |
+| 23 | **Sentiment technique IA** — score basé sur RSI/MACD/MM/Bollinger + rapport mixte (tech+presse) écrit par Mistral | ✅ Fait |
+| 24 | **Bouton Analyser IA** — analyse complète manuelle (indicateurs + toutes sources news + scoring + rapport IA) | ✅ Fait |
+| 25 | **Analyse auto à la création** — analyse_complete_task lancée automatiquement à l'ajout d'un titre (historique 1 an) | ✅ Fait |
+| 26 | **Gestion titres dans le dashboard** — ajout (ticker/ISIN/nom), suppression réelle, déplacement portefeuille↔surveillance | ✅ Fait |
+| 27 | **Position éditable** — nb actions + PRU + calcul PV/MV temps réel dans la fiche titre | ✅ Fait |
+| 28 | **News gratuites planifiées** — RSS + Reddit à 9h et 13h lun-ven (illimité, sans quota) | ✅ Fait |
+
+---
+
+## Phase 2 — Intelligence artificielle avancée
+
+### Objectif
+
+Exploiter pleinement l'IA (Mistral) pour transformer les données brutes en aide à la décision actionnable. L'IA ne donne toujours **pas de conseils d'investissement** — elle observe, analyse, compare et signale. Formulation systématique : *"Cette observation ne constitue pas un conseil d'investissement."*
+
+### Étapes Phase 2
+
+| # | Étape | Description | Statut |
+|---|---|---|---|
+| 29 | **Chat IA contextuel** | Chat dans le dashboard pour poser des questions en langage naturel. L'IA accède à toutes les données du titre (cours, indicateurs, articles, fondamentaux, alertes, position). Ex : *"Est-ce le bon moment pour renforcer LVMH ?"*, *"Compare AB Science et GenSight"*, *"Résume la semaine pour mon portefeuille"*. Endpoint `/api/chat/` + composant React ChatIA. | ⬜ À faire |
+| 30 | **Analyse fondamentale IA** | Quand les fondamentaux sont récupérés (PER, ROE, dette, croissance BPA, dividende), l'IA rédige une analyse qualitative : forces, faiblesses, positionnement sectoriel. Stocké dans `Fondamentaux.analyse_ia`. Mis à jour 2x/semaine avec les fondamentaux. | ⬜ À faire |
+| 31 | **Détection de patterns graphiques** | L'IA analyse les séries de chandeliers et détecte les patterns classiques : double bottom, tête-épaules, triangle, canal, drapeau. Annotations visuelles (marqueurs) sur le graphique Lightweight Charts. Nouveau modèle `PatternDetecte`. | ⬜ À faire |
+| 32 | **Recommandation de renforcement intelligent** | Quand un titre en portefeuille baisse significativement avec des fondamentaux solides, l'IA génère une observation contextuelle : *"AB Science a baissé de 15% ce mois. RSI à 35, fondamentaux stables. Historiquement, 4 rebonds sur 5 dans cette configuration sur ce titre."* Intégré dans les alertes de type `renforcement`. | ⬜ À faire |
+| 33 | **Digest hebdomadaire enrichi** | Vendredi soir : synthèse IA de la semaine — faits marquants par titre, mouvements significatifs, opportunités détectées, risques identifiés, performance du portefeuille. Email HTML + notification Telegram. Remplace le digest basique existant. | ⬜ À faire |
+| 34 | **Score de conviction IA** | Pour chaque titre, score 0-100 "conviction IA" combinant : technique (25%) + fondamentaux (35%) + sentiment presse (20%) + historique patterns (20%). Mis à jour quotidiennement. Affiché dans la fiche titre et la liste sidebar. Accompagné d'une explication 2-3 phrases. | ⬜ À faire |
+| 35 | **Veille sectorielle** | L'IA surveille le secteur de chaque titre (Healthcare, Consumer Cyclical, etc.) et alerte si : un concurrent annonce des résultats impactants, une réglementation change, un événement macro affecte le secteur. Source : Google News par secteur. Nouveau type d'alerte `sectorielle`. | ⬜ À faire |
+
+### Architecture technique Phase 2
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   CHAT IA (étape 29)                         │
+│  React: ChatIA.jsx → POST /api/chat/                        │
+│  Backend: services/chat_ia.py → Mistral large                │
+│  Contexte injecté : cours, indicateurs, fondamentaux,        │
+│  articles, alertes, position, profil investisseur            │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│              ANALYSES IA ENRICHIES (étapes 30-35)           │
+│                                                               │
+│  scoring_llm.py étendu :                                     │
+│    + analyse_fondamentale_ia(ticker)      → Fondamentaux     │
+│    + detecter_patterns(ticker)            → PatternDetecte   │
+│    + evaluer_renforcement(ticker)         → Alerte           │
+│    + generer_digest_enrichi()            → Notification      │
+│    + calculer_score_conviction(ticker)   → ScoreConviction   │
+│    + veille_sectorielle(secteur)         → Alerte            │
+│                                                               │
+│  Modèles Mistral :                                           │
+│    mistral-small  → scoring batch, patterns                  │
+│    mistral-large  → chat, analyses qualitatives, digest      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Ordre d'implémentation recommandé
+
+1. **Chat IA** (étape 29) — le plus impactant, rend tout exploitable
+2. **Score de conviction** (étape 34) — donne une vision synthétique rapide
+3. **Analyse fondamentale IA** (étape 30) — enrichit la fiche titre
+4. **Digest enrichi** (étape 33) — valeur ajoutée hebdomadaire
+5. **Recommandation renforcement** (étape 32) — alertes actionnables
+6. **Détection patterns** (étape 31) — visuel sur le graphique
+7. **Veille sectorielle** (étape 35) — surveillance élargie
 
 ---
 
@@ -433,7 +513,14 @@ pea_project/
 - **Déploiement intelligent** : `pea_deploy.py --install --domain X --email Y [--no-ssl]` scanne tous les ports occupés avant d'installer. Gunicorn PEA sur port 8002 (8000 docker, 8001 geoclic). Redis PEA sur 6380. Nginx testé (`nginx -t`) avant tout rechargement — geoclic ne peut pas être cassé.
 - **Mise à jour** : `bash update.sh` — git pull + migrate + collectstatic + rebuild React + restart services.
 - **VPS actuel** : ubuntu@51.210.8.158 (vps-78e9c3c9) — HTTP seul (pas de SSL), `default_server` Nginx sur l'IP.
-- **API en AllowAny** : app mono-utilisateur personnelle, pas d'authentification sur les endpoints de lecture.
+- **API en AllowAny** : app mono-utilisateur personnelle, pas d'authentification — CSRF désactivé (SessionAuthentication retirée).
+- **Sources news gratuites** : Google News RSS + Boursorama RSS + Zonebourse RSS + Reddit JSON = illimité. Planifié 9h + 13h lun-ven.
+- **Analyse complète auto** : à la création d'un titre, `analyse_complete_task` lance : import OHLCV + indicateurs + news 1 an + scoring + rapport IA.
+- **Suppression réelle** : `DELETE /api/titres/` fait un vrai delete (plus de soft delete) pour éviter les conflits à la re-création.
+- **NUMBA_DISABLE_JIT=1** : requis dans supervisor pour pandas-ta (numba cache corrompu sur www-data).
+- **EODHD tier gratuit** : 20 req/jour + historique limité à 1 an (256 bougies). Boutons période : 1S/1M/3M/6M/1A.
+- **FMP stable API** : endpoints migrés de `/api/v3/` vers `/stable/` (symbol en query param).
+- **Mistral import** : `from mistralai.client import Mistral` (pas `from mistralai import Mistral`) sur la version installée.
 - **CSG 2026** : surveiller la hausse proposée de 9,2% à 10,6% (prélèvements sociaux de 17,2% → 18,6% si votée).
 
 ---
