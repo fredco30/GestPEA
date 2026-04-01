@@ -884,10 +884,10 @@ function PanneauActualites({ titres }) {
                 width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, fontWeight: 700,
-                background: a.score_sentiment >= 0.2 ? 'var(--color-background-success)' : a.score_sentiment <= -0.2 ? 'var(--color-background-danger)' : 'var(--color-background-warning)',
-                color: a.score_sentiment >= 0.2 ? 'var(--color-text-success)' : a.score_sentiment <= -0.2 ? 'var(--color-text-danger)' : 'var(--color-text-warning)',
+                background: Number(a.score_sentiment) >= 0.2 ? 'var(--color-background-success)' : Number(a.score_sentiment) <= -0.2 ? 'var(--color-background-danger)' : 'var(--color-background-warning)',
+                color: Number(a.score_sentiment) >= 0.2 ? 'var(--color-text-success)' : Number(a.score_sentiment) <= -0.2 ? 'var(--color-text-danger)' : 'var(--color-text-warning)',
               }}>
-                {a.score_sentiment >= 0 ? '+' : ''}{a.score_sentiment.toFixed(2)}
+                {Number(a.score_sentiment) >= 0 ? '+' : ''}{Number(a.score_sentiment).toFixed(2)}
               </div>
             )}
             <div style={{ flex: 1 }}>
