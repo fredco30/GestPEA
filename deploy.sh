@@ -180,6 +180,7 @@ cat > /etc/nginx/sites-available/pea << EOF
 server {
     listen 80;
     server_name $DOMAINE;
+    client_max_body_size 20M;
 
     # Frontend React (build statique)
     root $APPDIR/frontend/build;
