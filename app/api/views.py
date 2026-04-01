@@ -108,6 +108,20 @@ class TitreViewSet(ViewSet):
         saisie = (request.data.get('ticker') or '').strip()
         ticker_resolu = resoudre_ticker(saisie)
 
+        # Verifier si un titre archive existe deja → le reactiver
+        titre_archive = Titre.objects.filter(ticker=ticker_resolu, actif=False).first()
+        if titre_archive:
+            titre_archive.actif = True
+            titre_archive.statut = request.data.get('statut', 'surveillance')
+            titre_archive.save(update_fields=['actif', 'statut'])
+            logger.info(f"[API] Titre reactive : {ticker_resolu}")
+            from app.tasks import import_historique_task
+            import_historique_task.delay(ticker_resolu)
+            return Response(
+                TitreDetailSerializer(titre_archive).data,
+                status=status.HTTP_201_CREATED
+            )
+
         data = request.data.copy()
         data['ticker'] = ticker_resolu
 
@@ -192,13 +206,12 @@ class TitreViewSet(ViewSet):
     def destroy(self, request, pk=None):
         """
         DELETE /api/titres/{ticker}/
-        Soft delete : passe actif=False au lieu de supprimer.
+        Suppression reelle du titre et de toutes ses donnees associees.
         """
         titre = get_object_or_404(Titre, ticker=pk.upper())
-        titre.actif  = False
-        titre.statut = 'archive'
-        titre.save(update_fields=['actif', 'statut'])
-        logger.info(f"[API] Titre archive : {titre.ticker}")
+        ticker = titre.ticker
+        titre.delete()
+        logger.info(f"[API] Titre supprime : {ticker}")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['get'], url_path='ohlc')
