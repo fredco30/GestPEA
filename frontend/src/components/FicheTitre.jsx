@@ -114,11 +114,23 @@ export default function FicheTitre({ ticker }) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-success)', marginBottom: 6 }}>
             Analyse terminee
           </div>
-          {Object.entries(analyseResultat.etapes || {}).map(([etape, detail]) => (
-            <div key={etape} style={{ fontSize: 11, color: 'var(--color-text-secondary)', padding: '2px 0' }}>
-              <strong>{etape}</strong> : {typeof detail === 'object' ? `Score global ${detail.global?.toFixed(3) || '—'}` : detail}
-            </div>
-          ))}
+          {Object.entries(analyseResultat.etapes || {}).map(([etape, detail]) => {
+            let texte
+            if (typeof detail === 'string') {
+              texte = detail
+            } else if (detail?.resume_ia) {
+              texte = `Score global ${detail.global?.toFixed(3) || '—'}`
+            } else if (typeof detail === 'object') {
+              texte = Object.entries(detail).map(([k, v]) => `${k}: ${v}`).join(' · ')
+            } else {
+              texte = String(detail)
+            }
+            return (
+              <div key={etape} style={{ fontSize: 11, color: 'var(--color-text-secondary)', padding: '2px 0' }}>
+                <strong>{etape}</strong> : {texte}
+              </div>
+            )
+          })}
         </div>
       )}
       {analyseResultat?.erreur && (
