@@ -160,7 +160,7 @@ export default function Dashboard() {
       {/* SIDEBAR GLASSMORPHISM                                            */}
       {/* ================================================================ */}
       <aside style={{
-        width: 240, flexShrink: 0,
+        width: 290, flexShrink: 0,
         background: SB.bg,
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
@@ -187,28 +187,52 @@ export default function Dashboard() {
         {/* --- Contenu sidebar (z-index au-dessus du glass) --- */}
         <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-          {/* === BRANDING === */}
+          {/* === BRANDING avec bannière === */}
           <div style={{
-            padding: '20px 16px 16px',
-            display: 'flex', alignItems: 'center', gap: 12,
+            position: 'relative',
+            height: 110,
             borderBottom: `1px solid ${SB.border}`,
+            overflow: 'hidden',
           }}>
+            {/* Bannière en fond, recadrée sur la mascotte */}
             <img
-              src="/chatbot.png"
-              alt="GestPEA"
-              style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', boxShadow: `0 0 16px ${SB.cyanGlow}` }}
+              src="/banniereGestPEA.png"
+              alt=""
+              style={{
+                position: 'absolute', top: '50%', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '130%', minHeight: '100%',
+                objectFit: 'cover', objectPosition: 'center center',
+                opacity: 0.55,
+              }}
             />
-            <div>
-              <div style={{
-                fontSize: 18, fontWeight: 700, letterSpacing: '0.02em',
-                background: 'linear-gradient(135deg, #00d4ff 0%, #7B61FF 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}>
-                GestPEA
-              </div>
-              <div style={{ fontSize: 10, color: SB.textTertiary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                IA · Portefeuille PEA
+            {/* Dégradé sombre en bas pour lisibilité */}
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%',
+              background: 'linear-gradient(to top, #0a1628 10%, transparent 100%)',
+            }} />
+            {/* Texte par-dessus */}
+            <div style={{
+              position: 'absolute', bottom: 12, left: 16, right: 16,
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <img
+                src="/chatbot.png"
+                alt="GestPEA"
+                style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', boxShadow: `0 0 16px ${SB.cyanGlow}`, border: `2px solid ${SB.glassBorder}` }}
+              />
+              <div>
+                <div style={{
+                  fontSize: 20, fontWeight: 700, letterSpacing: '0.02em',
+                  background: 'linear-gradient(135deg, #00d4ff 0%, #7B61FF 100%)',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}>
+                  GestPEA
+                </div>
+                <div style={{ fontSize: 10, color: SB.textTertiary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  IA · Portefeuille PEA
+                </div>
               </div>
             </div>
           </div>
@@ -379,7 +403,7 @@ function SidebarNavItem({ icon, label, actif, onClick, badge }) {
         {icon}
       </span>
       <span style={{
-        fontSize: 13, fontWeight: actif ? 600 : 400,
+        fontSize: 14, fontWeight: actif ? 600 : 400,
         color: actif ? SB.textPrimary : SB.textSecondary,
         transition: 'color 0.2s',
       }}>
@@ -447,14 +471,14 @@ function NavTitre({ titre, actif, onClick, onSupprimer, onChangerStatut, labelSt
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontSize: 12, fontWeight: 500,
+            fontSize: 13, fontWeight: 500,
             color: actif ? SB.textPrimary : SB.textSecondary,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {titre.nom_court || titre.ticker}
           </div>
           <div style={{
-            fontSize: 11,
+            fontSize: 12,
             color: titre.variation_jour >= 0 ? SB.success : SB.danger,
           }}>
             {titre.variation_jour != null
@@ -640,8 +664,8 @@ function FormulaireAjout({ onAjouter }) {
 function StatLigne({ label, valeur, couleur }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
-      <span style={{ fontSize: 11, color: SB.textTertiary }}>{label}</span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: couleur || SB.textPrimary }}>{valeur}</span>
+      <span style={{ fontSize: 12, color: SB.textTertiary }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: couleur || SB.textPrimary }}>{valeur}</span>
     </div>
   )
 }
