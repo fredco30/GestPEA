@@ -30,7 +30,8 @@ export function BadgeSentiment({ score, label }) {
 // ---------------------------------------------------------------------------
 export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, ticker }) {
   const sentimentPresse = sentiments30j.filter(s => s.source === 'presse').slice(-1)[0]
-  const sentimentSocial = sentiments30j.filter(s => s.source === 'social').slice(-1)[0]
+  const sentimentTech   = sentiments30j.filter(s => s.source === 'social').slice(-1)[0]
+  const sentimentGlobal = sentiments30j.filter(s => s.source === 'global').slice(-1)[0]
 
   return (
     <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-lg)', padding: '14px 16px' }}>
@@ -40,8 +41,8 @@ export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, t
 
       {/* Barres sentiment */}
       {[
+        { label: 'Analyse technique', score: sentimentTech?.score },
         { label: 'Presse & analystes', score: sentimentPresse?.score },
-        { label: 'Reseaux sociaux',    score: sentimentSocial?.score },
       ].map(({ label, score }) => score != null && (
         <div key={label} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -54,6 +55,31 @@ export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, t
         </div>
       ))}
 
+      {/* Score global mixte */}
+      {sentimentGlobal && (
+        <div style={{ marginBottom: 10, padding: '6px 10px', background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-primary)' }}>Score global mixte</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: Number(sentimentGlobal.score) >= 0.15 ? 'var(--color-text-success)' : Number(sentimentGlobal.score) <= -0.15 ? 'var(--color-text-danger)' : 'var(--color-text-warning)' }}>
+              {Number(sentimentGlobal.score) >= 0 ? '+' : ''}{Number(sentimentGlobal.score).toFixed(3)}
+            </span>
+          </div>
+          <BarreSentiment score={Number(sentimentGlobal.score)} />
+        </div>
+      )}
+
+      {/* Rapport IA */}
+      {sentimentGlobal?.resume_ia && (
+        <div style={{ borderTop: '0.5px solid var(--color-border-tertiary)', paddingTop: 10, marginTop: 6, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-tertiary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Analyse IA
+          </div>
+          <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+            {sentimentGlobal.resume_ia.replace(/\*\*/g, '').replace(/^#+\s.*/gm, '').trim()}
+          </div>
+        </div>
+      )}
+
       {/* Signaux techniques */}
       {signaux.length > 0 && (
         <div style={{ borderTop: '0.5px solid var(--color-border-tertiary)', paddingTop: 10, marginTop: 4 }}>
@@ -63,7 +89,7 @@ export function CarteSignaux({ signaux = [], sentiments30j = [], fondamentaux, t
         </div>
       )}
 
-      {signaux.length === 0 && (
+      {signaux.length === 0 && !sentimentGlobal?.resume_ia && (
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '8px 0' }}>
           Aucun signal technique actif aujourd'hui
         </div>
