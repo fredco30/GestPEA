@@ -98,25 +98,64 @@ class TitreViewSet(ViewSet):
     def create(self, request):
         """
         POST /api/titres/
-        Ajoute un titre et declenche l'import historique en arriere-plan.
+        Ajoute un titre avec auto-remplissage IA.
+        Accepte : ticker (MC.PA), ISIN (FR0010557264), nom (AB Science),
+        ou ISIN+code (FR0010557264 AB).
         """
-        serializer = TitreCreateSerializer(data=request.data)
+        # --- Resolution ticker depuis ISIN, nom ou ticker direct ---
+        from app.services.auto_fill import resoudre_ticker, auto_remplir_titre, seuils_alerte_pour_secteur
+
+        saisie = (request.data.get('ticker') or '').strip()
+        ticker_resolu = resoudre_ticker(saisie)
+
+        data = request.data.copy()
+        data['ticker'] = ticker_resolu
+
+        serializer = TitreCreateSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # --- Auto-remplissage IA via EODHD/FMP ---
+        ticker = serializer.validated_data['ticker']
+        metadata = auto_remplir_titre(ticker)
+
+        # Injecter les metadonnees auto-remplies (sans ecraser les valeurs fournies)
+        for champ, valeur in metadata.items():
+            if champ not in serializer.validated_data or not serializer.validated_data[champ]:
+                serializer.validated_data[champ] = valeur
+
         titre = serializer.save()
 
-        # Creer une AlerteConfig par defaut pour ce titre
-        AlerteConfig.objects.get_or_create(titre=titre)
+        # --- Creer une AlerteConfig avec seuils adaptes au secteur ---
+        seuils = seuils_alerte_pour_secteur(titre.secteur)
+        AlerteConfig.objects.get_or_create(
+            titre=titre,
+            defaults={
+                'score_min_declenchement': seuils['score_min'],
+                'seuil_drawdown': seuils['seuil_drawdown'],
+                'alertes_renforcement': True,
+                'ignorer_court_terme': True,
+            }
+        )
 
         # Declencer l'import historique OHLC en tache Celery
         from app.tasks import import_historique_task
         import_historique_task.delay(titre.ticker)
 
-        logger.info(f"[API] Titre ajoute : {titre.ticker} — import historique lance")
+        auto_filled = list(metadata.keys())
+        logger.info(
+            f"[API] Titre ajoute : {titre.ticker} — "
+            f"auto-fill: {', '.join(auto_filled)} — import historique lance"
+        )
 
         return Response(
-            TitreDetailSerializer(titre).data,
+            {
+                **TitreDetailSerializer(titre).data,
+                'auto_fill': {
+                    'champs_remplis': auto_filled,
+                    'source': 'eodhd' if metadata.get('nom') else 'fmp',
+                }
+            },
             status=status.HTTP_201_CREATED
         )
 
