@@ -692,3 +692,95 @@ class ChatView(APIView):
             'ticker': ticker,
             'disclaimer': DISCLAIMER,
         })
+
+
+# -----------------------------------------------------------------------
+# Documents par titre
+# -----------------------------------------------------------------------
+
+class DocumentListView(APIView):
+    """GET/POST /api/titres/<ticker>/documents/"""
+    from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request, ticker):
+        from app.models import DocumentTitre
+        docs = DocumentTitre.objects.filter(titre__ticker=ticker).order_by('-date_upload')
+        from app.api.serializers import DocumentTitreSerializer
+        return Response(DocumentTitreSerializer(docs, many=True, context={'request': request}).data)
+
+    def post(self, request, ticker):
+        from app.models import Titre, DocumentTitre
+        from rest_framework.parsers import MultiPartParser, FormParser
+
+        try:
+            titre = Titre.objects.get(ticker=ticker, actif=True)
+        except Titre.DoesNotExist:
+            return Response({'error': f'Titre {ticker} introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        fichier = request.FILES.get('fichier')
+        if not fichier:
+            return Response({'error': 'Aucun fichier fourni.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier l'extension
+        import os
+        ext = os.path.splitext(fichier.name)[1].lower()
+        extensions_ok = {'.pdf', '.docx', '.xlsx', '.xls', '.png', '.jpg', '.jpeg', '.gif', '.txt', '.csv'}
+        if ext not in extensions_ok:
+            return Response(
+                {'error': f'Format non supporté ({ext}). Formats acceptés : PDF, Word, Excel, images, texte.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Créer le document
+        doc = DocumentTitre.objects.create(
+            titre=titre,
+            fichier=fichier,
+            nom=request.data.get('nom', fichier.name),
+            type_doc=request.data.get('type_doc', 'autre'),
+            taille=fichier.size,
+            notes=request.data.get('notes', ''),
+        )
+
+        # Lancer l'extraction + résumé en arrière-plan
+        from app.services.document_service import traiter_document
+        try:
+            traiter_document(doc.id)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error("Erreur traitement document %d: %s", doc.id, e)
+
+        from app.api.serializers import DocumentTitreSerializer
+        return Response(
+            DocumentTitreSerializer(doc, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class DocumentDetailView(APIView):
+    """GET/DELETE /api/titres/<ticker>/documents/<id>/"""
+
+    def get(self, request, ticker, pk):
+        from app.models import DocumentTitre
+        try:
+            doc = DocumentTitre.objects.get(pk=pk, titre__ticker=ticker)
+        except DocumentTitre.DoesNotExist:
+            return Response({'error': 'Document introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from app.api.serializers import DocumentTitreSerializer
+        data = DocumentTitreSerializer(doc, context={'request': request}).data
+        data['texte_extrait'] = doc.texte_extrait  # Inclure le texte complet en détail
+        return Response(data)
+
+    def delete(self, request, ticker, pk):
+        from app.models import DocumentTitre
+        try:
+            doc = DocumentTitre.objects.get(pk=pk, titre__ticker=ticker)
+        except DocumentTitre.DoesNotExist:
+            return Response({'error': 'Document introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Supprimer le fichier physique
+        if doc.fichier:
+            doc.fichier.delete(save=False)
+        doc.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

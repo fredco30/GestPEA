@@ -14,6 +14,7 @@ from app.models import (
     Titre, PrixJournalier, Fondamentaux,
     ScoreSentiment, Article, Signal,
     AlerteConfig, Alerte, ProfilInvestisseur, ApiQuota,
+    DocumentTitre,
 )
 
 
@@ -424,3 +425,27 @@ class DashboardSerializer(serializers.Serializer):
 
     # Quota API du jour
     quotas = ApiQuotaSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENTS
+# ---------------------------------------------------------------------------
+
+class DocumentTitreSerializer(serializers.ModelSerializer):
+    url_fichier   = serializers.SerializerMethodField()
+    type_doc_display = serializers.CharField(source='get_type_doc_display', read_only=True)
+
+    class Meta:
+        model  = DocumentTitre
+        fields = [
+            'id', 'nom', 'type_doc', 'type_doc_display', 'taille',
+            'resume_ia', 'date_upload', 'notes', 'url_fichier',
+        ]
+
+    def get_url_fichier(self, obj):
+        if obj.fichier:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.fichier.url)
+            return obj.fichier.url
+        return None

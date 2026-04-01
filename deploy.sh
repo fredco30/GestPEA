@@ -192,6 +192,13 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # Fichiers media (documents uploadés)
+    location /media/ {
+        alias $APPDIR/media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
     # API Django → Gunicorn
     location /api/ {
         proxy_pass         http://127.0.0.1:8000;

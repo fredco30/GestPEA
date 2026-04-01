@@ -902,11 +902,23 @@ def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
         "Score qualité": f"{fond.score_qualite}/10" if fond.score_qualite else "N/D",
     }
 
+    # Documents ajoutés par l'utilisateur
+    from app.models import DocumentTitre
+    docs = DocumentTitre.objects.filter(titre=titre).order_by('-date_upload')[:3]
+    docs_ctx = ""
+    if docs:
+        docs_lines = []
+        for doc in docs:
+            docs_lines.append(f"- [{doc.get_type_doc_display()}] {doc.nom}")
+            if doc.resume_ia:
+                docs_lines.append(f"  Résumé : {doc.resume_ia[:300]}")
+        docs_ctx = f"\n\nDOCUMENTS AJOUTÉS PAR L'UTILISATEUR :\n" + "\n".join(docs_lines)
+
     prompt = f"""Analyse les fondamentaux de {titre.nom} ({titre.ticker}), secteur {titre.secteur or 'inconnu'}.
 Cours actuel : {cours_str}
 
 DONNÉES FONDAMENTALES :
-{json.dumps(fond_data, ensure_ascii=False, indent=2)}
+{json.dumps(fond_data, ensure_ascii=False, indent=2)}{docs_ctx}
 
 Rédige une analyse qualitative en 4-6 phrases pour un DÉBUTANT en bourse :
 
@@ -914,6 +926,7 @@ Rédige une analyse qualitative en 4-6 phrases pour un DÉBUTANT en bourse :
 2. **Faiblesses** : ce qui est préoccupant (valorisation élevée, dette, marges faibles)
 3. **Positionnement** : comment se situe l'entreprise dans son secteur
 4. Si l'objectif des analystes est disponible, indique le potentiel en € et en %
+5. Si des documents ont été ajoutés (rapports, études), intègre les informations clés dans l'analyse
 
 RÈGLES :
 - Langage SIMPLE, pas de jargon (explique PER, ROE etc. en mots simples si tu les mentionnes)

@@ -691,3 +691,39 @@ class ApiQuota(models.Model):
     def restantes(self):
         limites = {'eodhd': 20, 'fmp': 250, 'newsapi': 100}
         return max(0, limites.get(self.api, 0) - self.nb_requetes)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENTS PAR TITRE (base documentaire / GMAO légère)
+# ---------------------------------------------------------------------------
+
+class DocumentTitre(models.Model):
+    """
+    Document associé à un titre : rapport annuel, étude clinique, news, analyse, etc.
+    Le texte est extrait automatiquement pour être exploité par l'IA.
+    """
+
+    TYPE_DOC_CHOICES = [
+        ('rapport_annuel', 'Rapport annuel'),
+        ('etude_clinique', 'Étude clinique'),
+        ('news', 'Article / News'),
+        ('analyse', 'Analyse / Note'),
+        ('autre', 'Autre'),
+    ]
+
+    titre         = models.ForeignKey(Titre, on_delete=models.CASCADE, related_name='documents')
+    fichier       = models.FileField(upload_to='documents/%Y/%m/')
+    nom           = models.CharField(max_length=200, help_text="Nom affiché du document")
+    type_doc      = models.CharField(max_length=20, choices=TYPE_DOC_CHOICES, default='autre')
+    taille        = models.PositiveIntegerField(default=0, help_text="Taille en octets")
+    texte_extrait = models.TextField(blank=True, help_text="Contenu textuel extrait pour l'IA")
+    resume_ia     = models.TextField(blank=True, help_text="Résumé IA du document (3-5 phrases)")
+    date_upload   = models.DateTimeField(auto_now_add=True)
+    notes         = models.TextField(blank=True, help_text="Commentaire libre de l'utilisateur")
+
+    class Meta:
+        ordering = ['-date_upload']
+        verbose_name = 'Document'
+
+    def __str__(self):
+        return f"{self.nom} ({self.titre.ticker})"

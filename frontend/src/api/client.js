@@ -154,3 +154,23 @@ export const getQuota = () =>
 /** Envoyer une question au chat IA contextuel */
 export const chatIA = (question, ticker = null) =>
   post('/chat/', { question, ticker })
+
+// ---------------------------------------------------------------------------
+// DOCUMENTS
+// ---------------------------------------------------------------------------
+
+/** Liste des documents d'un titre */
+export const getDocuments = (ticker) =>
+  get(`/titres/${ticker}/documents/`)
+
+/** Upload un document pour un titre (FormData) */
+export const uploadDocument = (ticker, formData) =>
+  request(`/titres/${ticker}/documents/`, {
+    method: 'POST',
+    body: formData,
+    headers: {},  // Laisser le navigateur mettre le Content-Type multipart
+  })
+
+/** Supprimer un document */
+export const deleteDocument = (ticker, docId) =>
+  del(`/titres/${ticker}/documents/${docId}/`)

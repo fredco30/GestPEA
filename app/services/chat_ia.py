@@ -23,7 +23,7 @@ from django.db.models import Max
 
 from app.models import (
     Titre, PrixJournalier, Fondamentaux, ScoreSentiment,
-    Article, Signal, Alerte, ProfilInvestisseur,
+    Article, Signal, Alerte, ProfilInvestisseur, DocumentTitre,
 )
 from app.services.scoring_llm import _get_client
 
@@ -131,6 +131,15 @@ def _build_titre_detail(titre):
         for a in articles:
             score_str = _decimal_to_str(a.score_sentiment) if a.score_sentiment else "?"
             lines.append(f"  Article [{a.source}] {a.titre_art} (sent: {score_str})")
+
+    # Documents uploadés (résumés IA)
+    documents = DocumentTitre.objects.filter(titre=titre).order_by('-date_upload')[:5]
+    if documents:
+        lines.append("\n### Documents ajoutés par l'utilisateur")
+        for doc in documents:
+            lines.append(f"  [{doc.get_type_doc_display()}] {doc.nom} ({doc.date_upload.strftime('%d/%m/%Y')})")
+            if doc.resume_ia:
+                lines.append(f"    Résumé : {doc.resume_ia[:300]}")
 
     return "\n".join(lines)
 
