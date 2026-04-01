@@ -287,6 +287,82 @@ class TitreViewSet(ViewSet):
             'ticker':  titre.ticker,
         })
 
+    @action(detail=True, methods=['post'], url_path='analyser')
+    def analyser(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/analyser/
+        Lance l'analyse complete IA d'un titre (synchrone) :
+          1. Calcul des indicateurs techniques
+          2. Collecte des news (NewsAPI)
+          3. Scoring sentiment des articles (Mistral)
+          4. Generation du sentiment mixte (technique + presse + rapport IA)
+        Retourne le resultat complet de l'analyse.
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+        resultats = {'ticker': titre.ticker, 'etapes': {}}
+
+        # 1. Indicateurs techniques
+        try:
+            import os
+            os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+            from app.services.indicators import calculate_indicators
+            nb = calculate_indicators(titre)
+            resultats['etapes']['indicateurs'] = f'{nb} bougies calculees'
+        except Exception as e:
+            resultats['etapes']['indicateurs'] = f'Erreur : {e}'
+
+        # 2. Collecte news NewsAPI
+        nb_articles = 0
+        try:
+            from django.conf import settings
+            if settings.NEWSAPI_KEY:
+                from app.services.newsapi_client import NewsAPIClient
+                client = NewsAPIClient()
+                nb_articles = client.import_news_pour_titres([titre.ticker])
+                client.maj_quota()
+                resultats['etapes']['newsapi'] = f'{nb_articles} articles importes'
+            else:
+                resultats['etapes']['newsapi'] = 'Cle NewsAPI non configuree'
+        except Exception as e:
+            resultats['etapes']['newsapi'] = f'Erreur : {e}'
+
+        # 3. Scoring sentiment articles
+        nb_scores = 0
+        try:
+            from app.models import Article
+            ids = list(
+                Article.objects.filter(
+                    titre=titre, score_sentiment__isnull=True
+                ).values_list('id', flat=True)
+            )
+            if ids:
+                from app.services.scoring_llm import scorer_articles
+                scorer_articles(ids)
+                nb_scores = len(ids)
+            resultats['etapes']['scoring'] = f'{nb_scores} articles scores'
+        except Exception as e:
+            resultats['etapes']['scoring'] = f'Erreur : {e}'
+
+        # 4. Sentiment mixte (technique + presse + rapport IA)
+        try:
+            from app.services.scoring_llm import generer_sentiment_mixte
+            sentiment = generer_sentiment_mixte(titre.ticker)
+            if sentiment:
+                resultats['etapes']['sentiment'] = {
+                    'technique': sentiment['score_technique'],
+                    'presse': sentiment['score_presse'],
+                    'global': sentiment['score_global'],
+                    'resume_ia': sentiment['resume_ia'][:300],
+                }
+            else:
+                resultats['etapes']['sentiment'] = 'Aucune donnee'
+        except Exception as e:
+            resultats['etapes']['sentiment'] = f'Erreur : {e}'
+
+        logger.info(f"[API] Analyse complete {titre.ticker} : {resultats['etapes']}")
+
+        return Response(resultats)
+
     @action(detail=True, methods=['get', 'patch'], url_path='config')
     def config_alertes(self, request, pk=None):
         """

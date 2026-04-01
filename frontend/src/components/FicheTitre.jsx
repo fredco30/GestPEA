@@ -7,11 +7,29 @@
 
 import React, { useState } from 'react'
 import { useTitre } from '../hooks/useTitre'
+import { analyserTitre } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
 export default function FicheTitre({ ticker }) {
-  const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode } = useTitre(ticker)
+  const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode, rafraichir } = useTitre(ticker)
+  const [analyseEnCours, setAnalyseEnCours] = useState(false)
+  const [analyseResultat, setAnalyseResultat] = useState(null)
+
+  const lancerAnalyse = async () => {
+    setAnalyseEnCours(true)
+    setAnalyseResultat(null)
+    try {
+      const result = await analyserTitre(ticker)
+      setAnalyseResultat(result)
+      // Rafraichir les donnees du titre apres analyse
+      rafraichir()
+    } catch (e) {
+      setAnalyseResultat({ erreur: e.message })
+    } finally {
+      setAnalyseEnCours(false)
+    }
+  }
 
   if (loading) return <Squelette />
   if (!titre)  return <div style={{ color: 'var(--color-text-tertiary)', padding: 24 }}>Titre introuvable.</div>
@@ -50,6 +68,19 @@ export default function FicheTitre({ ticker }) {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={lancerAnalyse}
+            disabled={analyseEnCours}
+            style={{
+              padding: '6px 14px', fontSize: 12, fontWeight: 500,
+              background: analyseEnCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
+              color: analyseEnCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
+              border: 'none', borderRadius: 'var(--border-radius-md)',
+              cursor: analyseEnCours ? 'wait' : 'pointer',
+            }}
+          >
+            {analyseEnCours ? 'Analyse en cours...' : 'Analyser IA'}
+          </button>
           {sentimentGlobal && <BadgeSentiment score={Number(sentimentGlobal.score)} label={sentimentGlobal.label} />}
           <PositionBadge titre={titre} dernier={dernier} />
         </div>
@@ -73,6 +104,32 @@ export default function FicheTitre({ ticker }) {
             : sentimentGlobal?.couleur === 'danger' ? 'var(--color-text-danger)'
             : 'var(--color-text-warning)'} />
       </div>
+
+      {/* ---- Resultat analyse IA ---- */}
+      {analyseResultat && !analyseResultat.erreur && (
+        <div style={{
+          background: 'var(--color-background-success)', border: '1px solid var(--color-text-success)',
+          borderRadius: 'var(--border-radius-md)', padding: '10px 14px',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-success)', marginBottom: 6 }}>
+            Analyse terminee
+          </div>
+          {Object.entries(analyseResultat.etapes || {}).map(([etape, detail]) => (
+            <div key={etape} style={{ fontSize: 11, color: 'var(--color-text-secondary)', padding: '2px 0' }}>
+              <strong>{etape}</strong> : {typeof detail === 'object' ? `Score global ${detail.global?.toFixed(3) || '—'}` : detail}
+            </div>
+          ))}
+        </div>
+      )}
+      {analyseResultat?.erreur && (
+        <div style={{
+          background: 'var(--color-background-danger)', border: '1px solid var(--color-text-danger)',
+          borderRadius: 'var(--border-radius-md)', padding: '10px 14px',
+          fontSize: 12, color: 'var(--color-text-danger)',
+        }}>
+          Erreur : {analyseResultat.erreur}
+        </div>
+      )}
 
       {/* ---- Graphique technique ---- */}
       {ohlc && (
