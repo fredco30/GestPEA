@@ -57,10 +57,13 @@ def _get_client():
     try:
         from mistralai import Mistral
     except ImportError:
-        raise ImportError(
-            "La librairie 'mistralai' n'est pas installée. "
-            "Exécuter : pip install mistralai"
-        )
+        try:
+            from mistralai.client import Mistral
+        except ImportError:
+            raise ImportError(
+                "La librairie 'mistralai' n'est pas installée. "
+                "Exécuter : pip install mistralai"
+            )
 
     api_key = getattr(settings, 'MISTRAL_API_KEY', '')
     if not api_key:
