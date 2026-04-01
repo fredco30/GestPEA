@@ -19,18 +19,17 @@ const STYLES = {
     position: 'fixed',
     bottom: 24,
     right: 24,
-    width: 52,
-    height: 52,
+    width: 56,
+    height: 56,
     borderRadius: '50%',
-    background: 'var(--color-accent, #6366f1)',
-    color: '#fff',
+    background: 'transparent',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 22,
-    boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+    padding: 0,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
     zIndex: 1000,
     transition: 'transform 0.2s',
   },
@@ -246,7 +245,10 @@ export default function ChatIA({ ticker }) {
         onClick={() => setOpen(o => !o)}
         title="Chat IA"
       >
-        {open ? '\u2715' : '\uD83D\uDCAC'}
+        {open
+          ? <span style={{ fontSize: 20 }}>✕</span>
+          : <img src="/chatbot.png" alt="Chat IA" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
+        }
       </button>
 
       {/* Panel */}
