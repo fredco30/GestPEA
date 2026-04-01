@@ -2,7 +2,7 @@
 
 > Fichier de référence généré et maintenu au fil des échanges avec Claude.  
 > Objectif : disposer d'un historique complet des décisions d'architecture pour lancer le codage sans avoir à tout réexpliquer.  
-> **Dernière mise à jour : 31 mars 2026 — PROJET COMPLET ✅ — script de déploiement intelligent avec scan des ports ajouté**
+> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — migration Mistral AI + déploiement 51.210.8.158**
 
 ---
 
@@ -161,7 +161,7 @@ Fiabilité historique de ce pattern sur ce titre : 80%
 | Tâches asynchrones | Celery + Redis |
 | Base de données | PostgreSQL |
 | Scheduler | Celery Beat (crontab) |
-| LLM scoring sentiment | Claude API (Anthropic) |
+| LLM scoring sentiment | Mistral AI (mistral-small-latest + mistral-large-latest) |
 | Analyse technique | pandas-ta ou ta-lib (Python) |
 
 ### Frontend
@@ -363,8 +363,8 @@ pea_project/
 
 ### Détails scoring LLM (`scoring_llm.py`)
 
-- **Modèle scoring articles** : `claude-haiku-4-5-20251001` — rapide et économique (~0,001 €/article)
-- **Modèle rédaction alertes** : `claude-sonnet-4-6` — meilleure qualité narrative (~0,005 €/alerte)
+- **Modèle scoring articles** : `mistral-small-latest` — rapide et économique
+- **Modèle rédaction alertes** : `mistral-large-latest` — meilleure qualité narrative
 - **Batch de 5 articles par appel** → 4 appels pour 20 articles au lieu de 20
 - **Pondération sentiment global** : 65% presse / 35% social (profil PEA long terme)
 - **Disclaimer garanti par le code** — ajouté programmatiquement si absent de la réponse LLM
@@ -406,6 +406,9 @@ pea_project/
 | 15 | **Frontend React** — ListeSurveillance, PanneauAlertes, client API, hooks | ✅ Fait |
 | 16 | **Notifications** — email HTML + Telegram bot + webhook générique | ✅ Fait |
 | 17 | **Déploiement VPS OVH** — Nginx + Gunicorn + Celery + SSL Let's Encrypt | ✅ Fait |
+| 18 | **Migration LLM** — Anthropic → Mistral AI (scoring_llm.py, settings, requirements) | ✅ Fait |
+| 19 | **Déploiement VPS** — 51.210.8.158, Gunicorn:8002, Redis:6380, PostgreSQL partagé | ✅ Fait |
+| 20 | **Auto-remplissage titre par IA** — saisir juste le ticker, l'IA complète place, pays, secteur, éligibilité PEA et seuils d'alerte automatiquement | ⬜ À faire |
 
 ---
 
@@ -418,13 +421,15 @@ pea_project/
 - **News mutualisée** : toujours 1 seul appel API avec tous les tickers en paramètre, jamais 1 appel par ticker.
 - **L'import historique OHLC** se fait en 1 seul appel bulk EODHD au premier lancement — jamais re-téléchargé, seulement enrichi chaque soir de la bougie du jour.
 - **Screener PEA** : 1 appel le 1er vendredi du mois pour mettre à jour la liste des titres éligibles — la table sert de filtre dans toute l'interface.
-- **Deux modèles LLM distincts** : Haiku pour le scoring en lot (économie), Sonnet pour la rédaction des alertes (qualité).
+- **Deux modèles LLM distincts** : mistral-small-latest pour le scoring en lot (économie), mistral-large-latest pour la rédaction des alertes (qualité).
 - **Le disclaimer** est ajouté programmatiquement dans `scoring_llm.py` — ne dépend pas du LLM.
-- **Variables d'environnement** : toutes les clés API dans `.env` (ne jamais commiter).
+- **Variables d'environnement** : toutes les clés API dans `.env` (ne jamais commiter). Clé LLM = `MISTRAL_API_KEY`.
 - **Bot Telegram** : créer via @BotFather, récupérer le CHAT_ID via `getUpdates`, tester avec `_envoyer_telegram_texte()`.
 - **Gmail SMTP** : utiliser un mot de passe d'application (pas le vrai mot de passe) — générer sur myaccount.google.com/apppasswords.
-- **Déploiement intelligent** : `pea_deploy.py` scanne tous les ports occupés avant d'installer. Si geoclic tourne sur 8000, PEA prend automatiquement 8001. Si Redis est déjà sur 6379, PEA utilise la DB 1 au lieu d'une nouvelle instance. Nginx est testé (`nginx -t`) avant tout rechargement — geoclic ne peut pas être cassé.
+- **Déploiement intelligent** : `pea_deploy.py --install --domain X --email Y [--no-ssl]` scanne tous les ports occupés avant d'installer. Gunicorn PEA sur port 8002 (8000 docker, 8001 geoclic). Redis PEA sur 6380. Nginx testé (`nginx -t`) avant tout rechargement — geoclic ne peut pas être cassé.
 - **Mise à jour** : `bash update.sh` — git pull + migrate + collectstatic + rebuild React + restart services.
+- **VPS actuel** : ubuntu@51.210.8.158 (vps-78e9c3c9) — HTTP seul (pas de SSL), `default_server` Nginx sur l'IP.
+- **API en AllowAny** : app mono-utilisateur personnelle, pas d'authentification sur les endpoints de lecture.
 - **CSG 2026** : surveiller la hausse proposée de 9,2% à 10,6% (prélèvements sociaux de 17,2% → 18,6% si votée).
 
 ---
