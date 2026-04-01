@@ -203,7 +203,7 @@ export default function Dashboard() {
                 transform: 'translate(-50%, -50%)',
                 width: '130%', minHeight: '100%',
                 objectFit: 'cover', objectPosition: 'center center',
-                opacity: 0.55,
+                opacity: 0.75,
               }}
             />
             {/* Dégradé sombre en bas pour lisibilité */}
