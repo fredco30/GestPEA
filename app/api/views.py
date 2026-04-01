@@ -352,7 +352,6 @@ class TitreViewSet(ViewSet):
         # 3. Scoring sentiment articles
         nb_scores = 0
         try:
-            from app.models import Article
             ids = list(
                 Article.objects.filter(
                     titre=titre, score_sentiment__isnull=True
