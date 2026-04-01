@@ -19,8 +19,8 @@ const STYLES = {
     position: 'fixed',
     bottom: 24,
     right: 24,
-    width: 56,
-    height: 56,
+    width: 80,
+    height: 80,
     borderRadius: '50%',
     background: 'transparent',
     border: 'none',
@@ -247,7 +247,7 @@ export default function ChatIA({ ticker }) {
       >
         {open
           ? <span style={{ fontSize: 20 }}>✕</span>
-          : <img src="/chatbot.png" alt="Chat IA" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
+          : <img src="/chatbot.png" alt="Chat IA" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
         }
       </button>
 
