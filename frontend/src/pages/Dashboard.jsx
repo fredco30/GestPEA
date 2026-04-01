@@ -187,54 +187,21 @@ export default function Dashboard() {
         {/* --- Contenu sidebar (z-index au-dessus du glass) --- */}
         <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-          {/* === BRANDING avec bannière === */}
+          {/* === BRANDING — bannière seule === */}
           <div style={{
             position: 'relative',
-            height: 110,
             borderBottom: `1px solid ${SB.border}`,
             overflow: 'hidden',
           }}>
-            {/* Bannière en fond, recadrée sur la mascotte */}
             <img
               src="/banniereGestPEA.png"
-              alt=""
+              alt="GestPEA"
               style={{
-                position: 'absolute', top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '130%', minHeight: '100%',
-                objectFit: 'cover', objectPosition: 'center center',
-                opacity: 0.75,
+                display: 'block',
+                width: '100%',
+                height: 'auto',
               }}
             />
-            {/* Dégradé sombre en bas pour lisibilité */}
-            <div style={{
-              position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%',
-              background: 'linear-gradient(to top, #0a1628 10%, transparent 100%)',
-            }} />
-            {/* Texte par-dessus */}
-            <div style={{
-              position: 'absolute', bottom: 12, left: 16, right: 16,
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <img
-                src="/chatbot.png"
-                alt="GestPEA"
-                style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', boxShadow: `0 0 16px ${SB.cyanGlow}`, border: `2px solid ${SB.glassBorder}` }}
-              />
-              <div>
-                <div style={{
-                  fontSize: 20, fontWeight: 700, letterSpacing: '0.02em',
-                  background: 'linear-gradient(135deg, #00d4ff 0%, #7B61FF 100%)',
-                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}>
-                  GestPEA
-                </div>
-                <div style={{ fontSize: 10, color: SB.textTertiary, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  IA · Portefeuille PEA
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* === STATS RAPIDES === */}
