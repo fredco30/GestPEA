@@ -413,9 +413,12 @@ class Signal(models.Model):
         ('boll_inf',        'Prix proche bande Bollinger basse'),
         ('boll_sup',        'Prix proche bande Bollinger haute'),
         ('volume_spike',    'Pic de volume anormal'),
-        ('sentiment_hausse','Sentiment en forte hausse'),
-        ('sentiment_baisse','Sentiment en forte baisse'),
-        ('fondamental',     'Signal fondamental'),
+        ('sentiment_hausse',  'Sentiment en forte hausse'),
+        ('sentiment_baisse',  'Sentiment en forte baisse'),
+        ('fondamental',       'Signal fondamental'),
+        ('renforcement',      'Opportunité de renforcement'),
+        ('pattern_graphique', 'Pattern graphique détecté'),
+        ('sectorielle',      'Alerte sectorielle'),
     ]
 
     DIRECTION_CHOICES = [
@@ -727,3 +730,126 @@ class DocumentTitre(models.Model):
 
     def __str__(self):
         return f"{self.nom} ({self.titre.ticker})"
+
+
+# ---------------------------------------------------------------------------
+# PATTERNS GRAPHIQUES
+# ---------------------------------------------------------------------------
+
+class PatternDetecte(models.Model):
+    """
+    Pattern graphique détecté algorithmiquement sur les chandeliers.
+    Ex : double creux, tête-épaules, triangle, canal, drapeau.
+    """
+
+    TYPE_CHOICES = [
+        ('double_bottom',      'Double creux'),
+        ('double_top',         'Double sommet'),
+        ('head_shoulders',     'Tête-épaules'),
+        ('inv_head_shoulders', 'Tête-épaules inversée'),
+        ('triangle_asc',      'Triangle ascendant'),
+        ('triangle_desc',     'Triangle descendant'),
+        ('triangle_sym',      'Triangle symétrique'),
+        ('channel_asc',       'Canal ascendant'),
+        ('channel_desc',      'Canal descendant'),
+        ('flag',              'Drapeau'),
+        ('pennant',           'Fanion'),
+    ]
+
+    STATUT_CHOICES = [
+        ('en_formation', 'En formation'),
+        ('confirme',     'Confirmé'),
+        ('invalide',     'Invalidé'),
+    ]
+
+    titre              = models.ForeignKey(Titre, on_delete=models.CASCADE,
+                                            related_name='patterns')
+    type_pattern        = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    statut              = models.CharField(max_length=15, choices=STATUT_CHOICES,
+                                            default='en_formation')
+    direction           = models.CharField(max_length=10, choices=Signal.DIRECTION_CHOICES)
+
+    date_debut          = models.DateField()
+    date_fin            = models.DateField(null=True, blank=True,
+                                            help_text="Null = pattern encore en formation")
+    date_detection      = models.DateTimeField(auto_now_add=True)
+
+    # Niveaux de prix en euros
+    prix_support        = models.DecimalField(max_digits=12, decimal_places=4,
+                                               null=True, blank=True)
+    prix_resistance     = models.DecimalField(max_digits=12, decimal_places=4,
+                                               null=True, blank=True)
+    prix_objectif       = models.DecimalField(max_digits=12, decimal_places=4,
+                                               null=True, blank=True,
+                                               help_text="Objectif basé sur la hauteur du pattern")
+    prix_invalidation   = models.DecimalField(max_digits=12, decimal_places=4,
+                                               null=True, blank=True)
+
+    # Points clés pour annotation graphique
+    points_cles         = models.JSONField(default=list, blank=True,
+                                            help_text="[{time, value, label}] pour les marqueurs chart")
+    fiabilite           = models.DecimalField(max_digits=4, decimal_places=1,
+                                               null=True, blank=True,
+                                               help_text="Fiabilité historique %")
+    description         = models.TextField(blank=True,
+                                            help_text="Description en langage débutant")
+
+    class Meta:
+        ordering = ['-date_detection']
+        indexes = [
+            models.Index(fields=['titre', 'date_detection']),
+            models.Index(fields=['statut']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_type_pattern_display()} — {self.titre.ticker} ({self.statut})"
+
+
+# ---------------------------------------------------------------------------
+# VEILLE SECTORIELLE
+# ---------------------------------------------------------------------------
+
+class ArticleSectoriel(models.Model):
+    """
+    Article collecté au niveau sectoriel via Google News RSS.
+    Lié aux titres impactés dans le secteur correspondant.
+    """
+
+    TYPE_IMPACT_CHOICES = [
+        ('regulation',        'Régulation'),
+        ('concurrence',       'Concurrence'),
+        ('macro',             'Événement macro'),
+        ('resultats_secteur', 'Résultats sectoriels'),
+        ('innovation',        'Innovation'),
+        ('restructuration',   'Restructuration'),
+        ('autre',             'Autre'),
+    ]
+
+    secteur         = models.CharField(max_length=80)
+    date_pub        = models.DateTimeField()
+    source          = models.CharField(max_length=20, default='google_news')
+    url             = models.URLField(max_length=500, blank=True)
+    titre_art       = models.CharField(max_length=300)
+    extrait         = models.TextField(blank=True)
+
+    # Analyse IA
+    impact_secteur  = models.DecimalField(max_digits=4, decimal_places=3,
+                                           null=True, blank=True,
+                                           help_text="Score impact -1 à +1")
+    type_impact     = models.CharField(max_length=30, choices=TYPE_IMPACT_CHOICES,
+                                        blank=True)
+    analyse_ia      = models.TextField(blank=True,
+                                        help_text="Explication LLM de l'impact sectoriel")
+    titres_impactes = models.ManyToManyField(Titre, blank=True,
+                                              related_name='articles_sectoriels')
+
+    date_collecte   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date_pub']
+        indexes = [
+            models.Index(fields=['secteur', 'date_pub']),
+        ]
+
+    def __str__(self):
+        return f"[{self.secteur}] {self.titre_art[:60]}"

@@ -100,6 +100,7 @@ export default function FicheTitre({ ticker }) {
           loadingOhlc={loadingOhlc}
           periode={periode}
           onChangePeriode={changerPeriode}
+          patterns={titre.patterns_actifs}
         />
       )}
 

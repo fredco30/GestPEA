@@ -82,4 +82,14 @@ urlpatterns = [
     path('titres/<str:ticker>/documents/<int:pk>/',
          views.DocumentDetailView.as_view(),
          name='document-detail'),
+
+    # --- Patterns graphiques ---
+    path('titres/<str:ticker>/patterns/',
+         views.PatternListView.as_view(),
+         name='pattern-list'),
+
+    # --- Veille sectorielle ---
+    path('veille-sectorielle/',
+         views.VeilleSectorielleView.as_view(),
+         name='veille-sectorielle'),
 ]

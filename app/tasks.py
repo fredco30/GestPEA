@@ -428,6 +428,14 @@ def detect_signaux_task(self):
 
     logger.info(f"[Task] detect_signaux : {nb_signaux} nouveaux signaux détectés")
 
+    # Détection renforcement (étape 32) — titres portefeuille en drawdown
+    try:
+        from app.services.renforcement import detecter_opportunites_renforcement
+        nb_renforcements = detecter_opportunites_renforcement()
+        nb_signaux += nb_renforcements
+    except Exception as e:
+        logger.error("[Task] Erreur renforcement : %s", e, exc_info=True)
+
     if nb_signaux > 0:
         run_confluence_task.delay()
 
@@ -514,8 +522,9 @@ def run_confluence_task(self):
 
     logger.info(f"[Task] run_confluence : {alertes_creees} alertes créées")
 
-    # Enchaîner le calcul des scores de conviction
+    # Enchaîner le calcul des scores de conviction + patterns
     calculer_convictions_task.delay()
+    detect_patterns_task.delay()
 
     return {'status': 'ok', 'alertes': alertes_creees}
 
@@ -591,6 +600,65 @@ def calculer_convictions_task(self):
 
     except Exception as exc:
         logger.error(f"[Task] calculer_convictions — erreur : {exc}", exc_info=True)
+        raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# 6b. DETECTION PATTERNS GRAPHIQUES (étape 31)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=1)
+def detect_patterns_task(self):
+    """
+    Détecte les patterns graphiques (double creux, tête-épaules, triangles...)
+    sur tous les titres actifs. Crée des PatternDetecte en base.
+    """
+    from app.models import Titre, Signal
+    from app.services.patterns import detecter_patterns
+    from datetime import date
+
+    try:
+        tickers = list(
+            Titre.objects.filter(actif=True)
+            .exclude(statut='archive')
+            .values_list('ticker', flat=True)
+        )
+
+        total = 0
+        for ticker in tickers:
+            try:
+                nb = detecter_patterns(ticker)
+                total += nb
+
+                # Créer un Signal pour chaque pattern confirmé récent
+                if nb > 0:
+                    from app.models import PatternDetecte
+                    patterns_confirmes = PatternDetecte.objects.filter(
+                        titre__ticker=ticker,
+                        statut='confirme',
+                        date_detection__date=date.today(),
+                    )
+                    for p in patterns_confirmes:
+                        Signal.objects.get_or_create(
+                            titre=p.titre,
+                            date=date.today(),
+                            type_signal='pattern_graphique',
+                            defaults={
+                                'direction': p.direction,
+                                'valeur': p.prix_objectif,
+                                'description': f"{p.get_type_pattern_display()} confirmé"[:200],
+                                'actif': True,
+                            },
+                        )
+
+            except Exception as e:
+                logger.error("[Task] patterns %s : %s", ticker, e, exc_info=True)
+
+        logger.info("[Task] detect_patterns : %d patterns sur %d titres", total, len(tickers))
+        return {'status': 'ok', 'patterns': total}
+
+    except Exception as exc:
+        logger.error("[Task] detect_patterns — erreur : %s", exc, exc_info=True)
         raise self.retry(exc=exc)
 
 
@@ -854,6 +922,17 @@ def fetch_news_gratuites_task(self):
             logger.info(f"[Task] news_gratuites Reddit : {nb_reddit}")
         except Exception as e:
             logger.error(f"[Task] news_gratuites Reddit : {e}")
+
+        # Veille sectorielle (étape 35) — Google News par secteur
+        try:
+            from app.services.veille_sectorielle import collecter_news_sectorielles, analyser_impact_sectoriel
+            result_secteur = collecter_news_sectorielles()
+            nb_secteur = sum(result_secteur.values())
+            if nb_secteur > 0:
+                analyser_impact_sectoriel()
+            logger.info("[Task] news_gratuites veille sectorielle : %d articles", nb_secteur)
+        except Exception as e:
+            logger.error("[Task] news_gratuites veille sectorielle : %s", e)
 
         # Scorer les nouveaux articles
         if nb_total > 0:

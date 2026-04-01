@@ -693,6 +693,19 @@ def generer_texte_alerte(alerte_id: int) -> bool:
             "objectif_analystes": str(fond.objectif_cours_moyen) if fond and fond.objectif_cours_moyen else "N/D",
         }
 
+    # --- Contexte renforcement (étape 32) ---
+    renforcement_ctx = ""
+    is_renforcement = any(s.get('type_signal') == 'renforcement' for s in signaux)
+    if is_renforcement and titre.nb_actions and titre.nb_actions > 0:
+        pru = titre.prix_revient_moyen
+        pv_mv = titre.plus_moins_value
+        renforcement_ctx = f"""
+CONTEXTE RENFORCEMENT (titre en portefeuille) :
+- Position actuelle : {titre.nb_actions} actions, PRU {pru} €
+- Plus/moins-value latente : {pv_mv} €
+- Ce titre est DÉJÀ en portefeuille — l'alerte concerne un renforcement potentiel
+"""
+
     # --- Construire le prompt ---
 
     prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur DÉBUTANT gérant son PEA en mode long terme. Cette personne n'a AUCUNE connaissance technique — elle ne sait pas ce qu'est un RSI, un MACD ou des bandes de Bollinger.
@@ -702,7 +715,7 @@ DATE : {alerte.date_signal}
 COURS AU SIGNAL : {alerte.cours_au_signal} €
 SCORE DE CONFLUENCE : {alerte.score_confluence}/10
 NIVEAU : {alerte.niveau}
-
+{renforcement_ctx}
 SIGNAUX DÉTECTÉS :
 {json.dumps(signaux, ensure_ascii=False, indent=2, default=str)}
 

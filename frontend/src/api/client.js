@@ -174,3 +174,19 @@ export const uploadDocument = (ticker, formData) =>
 /** Supprimer un document */
 export const deleteDocument = (ticker, docId) =>
   del(`/titres/${ticker}/documents/${docId}/`)
+
+// ---------------------------------------------------------------------------
+// PATTERNS GRAPHIQUES
+// ---------------------------------------------------------------------------
+
+/** Patterns détectés pour un titre */
+export const getPatterns = (ticker, statut = null) =>
+  get(`/titres/${ticker}/patterns/`, statut ? { statut } : {})
+
+// ---------------------------------------------------------------------------
+// VEILLE SECTORIELLE
+// ---------------------------------------------------------------------------
+
+/** Articles sectoriels avec analyse IA */
+export const getVeilleSectorielle = (secteur = null, limit = 20) =>
+  get('/veille-sectorielle/', { ...(secteur && { secteur }), limit })
