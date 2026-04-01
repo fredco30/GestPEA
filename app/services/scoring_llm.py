@@ -247,7 +247,7 @@ def _agreger_sentiment_jour(ticker: str, jour: date) -> None:
         return
 
     # Séparer presse et social
-    sources_presse = ['newsapi', 'eodhd']
+    sources_presse = ['newsapi', 'eodhd', 'google_news', 'boursorama', 'zonebourse']
     sources_social = ['reddit', 'stocktwits']
 
     def score_moyen(qs):
