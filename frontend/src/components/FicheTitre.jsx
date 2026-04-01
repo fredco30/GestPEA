@@ -198,28 +198,28 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
         {/* Identité */}
         <div style={{ lineHeight: 1.25 }}>
-          <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          <span style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {titre.nom_court || titre.nom}
           </span>
-          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
+          <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
             {titre.ticker}
             {titre.place   ? ` · ${titre.place}`  : ''}
             {titre.secteur ? ` · ${titre.secteur}` : ''}
           </span>
         </div>
 
-        <div style={{ width: 1, height: 28, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
+        <div style={{ width: 1, height: 32, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
 
         {/* Cours + variation */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {dernier
               ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
               : '—'}
           </span>
           {dernier?.variation_pct != null && (
             <span style={{
-              fontSize: 13, fontWeight: 500,
+              fontSize: 16, fontWeight: 500,
               color: dernier.variation_pct >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
             }}>
               {dernier.variation_pct >= 0 ? '+' : ''}{dernier.variation_pct.toFixed(2)}%
@@ -407,20 +407,20 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
             <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 10 }}>Aucun document ajouté.</div>
           )}
           {docs.map(doc => (
-            <div key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+            <div key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '8px 0', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
               <div>
                 <a href={doc.url_fichier} target="_blank" rel="noreferrer"
-                  style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none' }}>
+                  style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none' }}>
                   {doc.nom}
                 </a>
-                <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 10, background: 'var(--color-background-primary)', color: 'var(--color-text-tertiary)' }}>
+                <span style={{ fontSize: 12, marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: 'var(--color-background-primary)', color: 'var(--color-text-tertiary)' }}>
                   {doc.type_doc_display}
                 </span>
-                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 6 }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginLeft: 6 }}>
                   {new Date(doc.date_upload).toLocaleDateString('fr-FR')}
                 </span>
                 {doc.resume_ia && (
-                  <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--color-text-secondary)', marginTop: 3, maxWidth: 420 }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--color-text-secondary)', marginTop: 4, maxWidth: 480 }}>
                     {doc.resume_ia}
                   </div>
                 )}
@@ -477,11 +477,11 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 function PillMetrique({ label, valeur, couleur }) {
   return (
     <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 9px',
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 12px',
       background: 'var(--color-background-secondary)',
       borderRadius: 20,
-      fontSize: 11,
+      fontSize: 13,
       whiteSpace: 'nowrap',
     }}>
       <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
@@ -519,9 +519,9 @@ function MiniGauge({ score }) {
 
 function MetriqueCard({ label, valeur, couleur }) {
   return (
-    <div style={{ background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)', padding: '10px 12px' }}>
-      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 500, color: couleur || 'var(--color-text-primary)' }}>{valeur}</div>
+    <div style={{ background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)', padding: '12px 14px' }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 500, color: couleur || 'var(--color-text-primary)' }}>{valeur}</div>
     </div>
   )
 }
