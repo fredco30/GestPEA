@@ -6,8 +6,8 @@
  * et la selection du titre actif.
  */
 
-import React, { useState, useEffect } from 'react'
-import { getTitres, getDashboard } from '../api/client'
+import React, { useState, useEffect, useCallback } from 'react'
+import { getTitres, getDashboard, createTitre, deleteTitre, updateTitre } from '../api/client'
 import FicheTitre from '../components/FicheTitre'
 import { ListeSurveillance, PanneauAlertes, QuotaBadge } from '../components/utilitaires'
 
@@ -53,6 +53,55 @@ export default function Dashboard() {
     }
     init()
   }, [])
+
+  // Recharger les listes de titres
+  const rechargerTitres = useCallback(async () => {
+    try {
+      const [pf, sv] = await Promise.all([
+        getTitres('portefeuille'),
+        getTitres('surveillance'),
+      ])
+      setTitresPf(pf)
+      setTitresSv(sv)
+    } catch (e) {
+      console.error('[Dashboard] recharger:', e)
+    }
+  }, [])
+
+  // Ajouter un titre
+  const ajouterTitre = async (saisie, statut) => {
+    try {
+      const result = await createTitre({ ticker: saisie, statut })
+      await rechargerTitres()
+      setTickerActif(result.ticker)
+      if (statut === 'portefeuille') setOnglet('portefeuille')
+      else setOnglet('surveillance')
+      return result
+    } catch (e) {
+      throw e
+    }
+  }
+
+  // Supprimer un titre
+  const supprimerTitre = async (ticker) => {
+    try {
+      await deleteTitre(ticker)
+      await rechargerTitres()
+      if (tickerActif === ticker) setTickerActif(null)
+    } catch (e) {
+      console.error('[Dashboard] supprimer:', e)
+    }
+  }
+
+  // Changer le statut d'un titre
+  const changerStatut = async (ticker, nouveauStatut) => {
+    try {
+      await updateTitre(ticker, { statut: nouveauStatut })
+      await rechargerTitres()
+    } catch (e) {
+      console.error('[Dashboard] changerStatut:', e)
+    }
+  }
 
   if (loading) return <EcranChargement />
 
@@ -108,6 +157,9 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Formulaire ajout titre */}
+        <FormulaireAjout onAjouter={ajouterTitre} />
+
         {/* Navigation */}
         <nav style={{ padding: '8px 0', flex: 1, overflowY: 'auto' }}>
           {ONGLETS_NAV.map(o => (
@@ -138,6 +190,9 @@ export default function Dashboard() {
                   titre={t}
                   actif={tickerActif === t.ticker}
                   onClick={() => setTickerActif(t.ticker)}
+                  onSupprimer={() => supprimerTitre(t.ticker)}
+                  onChangerStatut={() => changerStatut(t.ticker, 'surveillance')}
+                  labelStatut="vers Surveillance"
                 />
               ))}
             </>
@@ -153,6 +208,9 @@ export default function Dashboard() {
                   titre={t}
                   actif={tickerActif === t.ticker}
                   onClick={() => setTickerActif(t.ticker)}
+                  onSupprimer={() => supprimerTitre(t.ticker)}
+                  onChangerStatut={() => changerStatut(t.ticker, 'portefeuille')}
+                  labelStatut="vers Portefeuille"
                 />
               ))}
             </>
@@ -222,35 +280,216 @@ function NavItem({ label, actif, onClick, badge }) {
   )
 }
 
-function NavTitre({ titre, actif, onClick }) {
+function NavTitre({ titre, actif, onClick, onSupprimer, onChangerStatut, labelStatut }) {
   const sentiment = titre.sentiment_global
+  const [menuOuvert, setMenuOuvert] = useState(false)
+
   return (
-    <button
-      onClick={onClick}
+    <div
       style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        width: '100%', padding: '6px 16px',
+        display: 'flex', alignItems: 'center',
         background: actif ? 'var(--color-background-secondary)' : 'transparent',
-        border: 'none', cursor: 'pointer', textAlign: 'left',
+        position: 'relative',
       }}
+      onMouseLeave={() => setMenuOuvert(false)}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {titre.nom_court || titre.ticker}
+      <button
+        onClick={onClick}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          flex: 1, padding: '6px 8px 6px 16px',
+          background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {titre.nom_court || titre.ticker}
+          </div>
+          <div style={{ fontSize: 11, color: titre.variation_jour >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
+            {titre.variation_jour != null
+              ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
+              : '\u2014'}
+          </div>
         </div>
-        <div style={{ fontSize: 11, color: titre.variation_jour >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
-          {titre.variation_jour != null
-            ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
-            : '\u2014'}
-        </div>
-      </div>
-      {sentiment && (
+        {sentiment && (
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+            background: sentiment.couleur === 'success' ? '#1D9E75' : sentiment.couleur === 'danger' ? '#E24B4A' : '#BA7517',
+          }} />
+        )}
+      </button>
+
+      {/* Bouton menu contextuel */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setMenuOuvert(o => !o) }}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          padding: '4px 8px', fontSize: 14, color: 'var(--color-text-tertiary)',
+          opacity: actif || menuOuvert ? 1 : 0,
+          transition: 'opacity 0.15s',
+        }}
+      >
+        &#8942;
+      </button>
+
+      {/* Menu contextuel */}
+      {menuOuvert && (
         <div style={{
-          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-          background: sentiment.couleur === 'success' ? '#1D9E75' : sentiment.couleur === 'danger' ? '#E24B4A' : '#BA7517',
-        }} />
+          position: 'absolute', right: 4, top: '100%', zIndex: 10,
+          background: 'var(--color-background-primary)',
+          border: '1px solid var(--color-border-tertiary)',
+          borderRadius: 'var(--border-radius-md)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          minWidth: 150, overflow: 'hidden',
+        }}>
+          <button
+            onClick={() => { onChangerStatut(); setMenuOuvert(false) }}
+            style={{
+              width: '100%', padding: '8px 12px', background: 'none', border: 'none',
+              cursor: 'pointer', textAlign: 'left', fontSize: 12,
+              color: 'var(--color-text-secondary)',
+            }}
+            onMouseEnter={e => e.target.style.background = 'var(--color-background-secondary)'}
+            onMouseLeave={e => e.target.style.background = 'none'}
+          >
+            {labelStatut}
+          </button>
+          <button
+            onClick={() => { if (window.confirm(`Supprimer ${titre.nom_court || titre.ticker} ?`)) { onSupprimer(); setMenuOuvert(false) } }}
+            style={{
+              width: '100%', padding: '8px 12px', background: 'none', border: 'none',
+              cursor: 'pointer', textAlign: 'left', fontSize: 12,
+              color: 'var(--color-text-danger)',
+            }}
+            onMouseEnter={e => e.target.style.background = 'var(--color-background-danger)'}
+            onMouseLeave={e => e.target.style.background = 'none'}
+          >
+            Supprimer
+          </button>
+        </div>
       )}
-    </button>
+    </div>
+  )
+}
+
+function FormulaireAjout({ onAjouter }) {
+  const [ouvert, setOuvert]     = useState(false)
+  const [saisie, setSaisie]     = useState('')
+  const [statut, setStatut]     = useState('surveillance')
+  const [chargement, setChargement] = useState(false)
+  const [erreur, setErreur]     = useState('')
+  const [succes, setSucces]     = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!saisie.trim()) return
+
+    setChargement(true)
+    setErreur('')
+    setSucces('')
+    try {
+      const result = await onAjouter(saisie.trim(), statut)
+      setSucces(`${result.nom_court || result.ticker} ajouté`)
+      setSaisie('')
+      setTimeout(() => { setSucces(''); setOuvert(false) }, 2000)
+    } catch (e) {
+      setErreur(e.data?.ticker?.[0] || e.message || 'Erreur')
+    } finally {
+      setChargement(false)
+    }
+  }
+
+  if (!ouvert) {
+    return (
+      <div style={{ padding: '8px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        <button
+          onClick={() => setOuvert(true)}
+          style={{
+            width: '100%', padding: '7px 10px',
+            background: 'var(--color-background-secondary)',
+            border: '1px dashed var(--color-border-tertiary)',
+            borderRadius: 'var(--border-radius-md)',
+            cursor: 'pointer', fontSize: 12, color: 'var(--color-text-secondary)',
+          }}
+        >
+          + Ajouter un titre
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: '10px 12px', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          value={saisie}
+          onChange={e => setSaisie(e.target.value)}
+          placeholder="Ticker, ISIN ou nom..."
+          autoFocus
+          style={{
+            width: '100%', padding: '7px 10px', fontSize: 12,
+            border: '1px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--border-radius-md)',
+            background: 'var(--color-background-primary)',
+            color: 'var(--color-text-primary)',
+            outline: 'none', boxSizing: 'border-box',
+          }}
+        />
+
+        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+          {['surveillance', 'portefeuille'].map(s => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatut(s)}
+              style={{
+                flex: 1, padding: '4px 6px', fontSize: 10,
+                border: '1px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--border-radius-sm)',
+                background: statut === s ? 'var(--color-text-primary)' : 'var(--color-background-secondary)',
+                color: statut === s ? 'var(--color-background-primary)' : 'var(--color-text-secondary)',
+                cursor: 'pointer', fontWeight: statut === s ? 500 : 400,
+              }}
+            >
+              {s === 'surveillance' ? 'Surveillance' : 'Portefeuille'}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+          <button
+            type="submit"
+            disabled={chargement || !saisie.trim()}
+            style={{
+              flex: 1, padding: '6px', fontSize: 11, fontWeight: 500,
+              background: 'var(--color-text-success)', color: '#fff',
+              border: 'none', borderRadius: 'var(--border-radius-sm)',
+              cursor: chargement ? 'wait' : 'pointer',
+              opacity: chargement || !saisie.trim() ? 0.5 : 1,
+            }}
+          >
+            {chargement ? 'Ajout...' : 'Ajouter'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOuvert(false); setSaisie(''); setErreur(''); setSucces('') }}
+            style={{
+              padding: '6px 10px', fontSize: 11,
+              background: 'var(--color-background-secondary)',
+              border: '1px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--border-radius-sm)',
+              cursor: 'pointer', color: 'var(--color-text-secondary)',
+            }}
+          >
+            Annuler
+          </button>
+        </div>
+
+        {erreur && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-danger)' }}>{erreur}</div>}
+        {succes && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-success)' }}>{succes}</div>}
+      </form>
+    </div>
   )
 }
 
