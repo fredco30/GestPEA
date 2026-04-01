@@ -765,12 +765,12 @@ function PanneauPerformance({ titres, dashboard }) {
           </thead>
           <tbody>
             {titres.map(t => {
-              const cours = t.dernier_cours || 0
+              const cours = t.dernier_cours?.cloture || 0
               const nb = t.nb_actions || 0
-              const pru = t.prix_revient_moyen || 0
-              const valeur = nb * cours
-              const pmv = pru ? valeur - (nb * pru) : null
-              const pmvPct = pru && nb ? ((cours - pru) / pru * 100) : null
+              const pru = Number(t.prix_revient_moyen) || 0
+              const valeur = nb && cours ? nb * cours : null
+              const pmv = pru && valeur ? valeur - (nb * pru) : null
+              const pmvPct = pru && nb && cours ? ((cours - pru) / pru * 100) : null
 
               return (
                 <tr key={t.ticker} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
