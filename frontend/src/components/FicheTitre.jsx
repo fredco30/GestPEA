@@ -53,6 +53,9 @@ export default function FicheTitre({ ticker }) {
         onDocUploaded={() => setDocsRefreshKey(k => k + 1)}
       />
 
+      {/* ---- Documents ---- */}
+      <PanneauDocuments ticker={ticker} refreshKey={docsRefreshKey} />
+
       {/* ---- Resultat analyse IA ---- */}
       {analyseResultat && !analyseResultat.erreur && (
         <div style={{
@@ -120,9 +123,6 @@ export default function FicheTitre({ ticker }) {
 
       {/* ---- Fondamentaux ---- */}
       {fond && <CarteFondamentaux fond={fond} />}
-
-      {/* ---- Documents ---- */}
-      <PanneauDocuments ticker={ticker} refreshKey={docsRefreshKey} />
 
     </div>
   )
