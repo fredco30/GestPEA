@@ -27,7 +27,7 @@ from app.models import Fondamentaux, Titre
 
 logger = logging.getLogger(__name__)
 
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 TIMEOUT_SEC = 15
 PAUSE_INTER_REQ = 0.5
 MAX_RETRIES = 3
@@ -125,7 +125,7 @@ class FMPClient:
     def get_profil(self, ticker: str) -> Optional[dict]:
         """Recupere le profil d'une entreprise (secteur, capitalisation, etc.)."""
         sym = self._ticker_fmp(ticker)
-        data = self._get(f"profile/{sym}")
+        data = self._get("profile", {"symbol": sym})
         if isinstance(data, list) and data:
             return data[0]
         return None
@@ -137,7 +137,7 @@ class FMPClient:
     def get_ratios(self, ticker: str) -> Optional[dict]:
         """Recupere les ratios financiers TTM (trailing twelve months)."""
         sym = self._ticker_fmp(ticker)
-        data = self._get(f"ratios-ttm/{sym}")
+        data = self._get("ratios-ttm", {"symbol": sym})
         if isinstance(data, list) and data:
             return data[0]
         return None
@@ -145,7 +145,7 @@ class FMPClient:
     def get_key_metrics(self, ticker: str) -> Optional[dict]:
         """Recupere les metriques cles TTM."""
         sym = self._ticker_fmp(ticker)
-        data = self._get(f"key-metrics-ttm/{sym}")
+        data = self._get("key-metrics-ttm", {"symbol": sym})
         if isinstance(data, list) and data:
             return data[0]
         return None
@@ -157,7 +157,7 @@ class FMPClient:
     def get_analyst_estimates(self, ticker: str) -> Optional[dict]:
         """Recupere le consensus analystes."""
         sym = self._ticker_fmp(ticker)
-        data = self._get(f"analyst-estimates/{sym}", {"limit": 1})
+        data = self._get("analyst-estimates", {"symbol": sym, "limit": 1})
         if isinstance(data, list) and data:
             return data[0]
         return None
@@ -165,7 +165,7 @@ class FMPClient:
     def get_price_target(self, ticker: str) -> Optional[dict]:
         """Recupere l'objectif de cours consensus."""
         sym = self._ticker_fmp(ticker)
-        data = self._get(f"price-target-consensus/{sym}")
+        data = self._get("price-target-consensus", {"symbol": sym})
         if isinstance(data, list) and data:
             return data[0]
         return None
