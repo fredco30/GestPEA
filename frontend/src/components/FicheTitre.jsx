@@ -105,6 +105,15 @@ export default function FicheTitre({ ticker }) {
             : 'var(--color-text-warning)'} />
       </div>
 
+      {/* ---- Score de conviction IA ---- */}
+      {titre.score_conviction != null && (
+        <CarteConviction
+          score={titre.score_conviction}
+          explication={titre.explication_conviction}
+          dateCalcul={titre.date_calcul_conviction}
+        />
+      )}
+
       {/* ---- Position portefeuille (éditable) ---- */}
       {titre.statut === 'portefeuille' && (
         <PanneauPosition titre={titre} ticker={ticker} onUpdate={rafraichir} />
@@ -189,6 +198,68 @@ export default function FicheTitre({ ticker }) {
 // ---------------------------------------------------------------------------
 // Sous-composants
 // ---------------------------------------------------------------------------
+
+function CarteConviction({ score, explication, dateCalcul }) {
+  const couleur = score >= 70 ? 'success' : score >= 40 ? 'warning' : 'danger'
+  const label = score >= 70 ? 'Conviction forte' : score >= 40 ? 'Conviction moderee' : 'Conviction faible'
+  const pct = score / 100
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)',
+      padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Jauge circulaire */}
+        <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+          <svg width="56" height="56" viewBox="0 0 56 56">
+            <circle cx="28" cy="28" r="24" fill="none" stroke="var(--color-background-secondary)" strokeWidth="4" />
+            <circle cx="28" cy="28" r="24" fill="none"
+              stroke={`var(--color-text-${couleur})`} strokeWidth="4"
+              strokeDasharray={`${pct * 150.8} 150.8`}
+              strokeLinecap="round"
+              transform="rotate(-90 28 28)" />
+          </svg>
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16, fontWeight: 600, color: `var(--color-text-${couleur})`,
+          }}>
+            {score}
+          </div>
+        </div>
+
+        {/* Texte */}
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+              Score de conviction IA
+            </span>
+            <span style={{
+              fontSize: 10, padding: '2px 8px', borderRadius: 12, fontWeight: 500,
+              background: `var(--color-background-${couleur})`,
+              color: `var(--color-text-${couleur})`,
+            }}>
+              {label}
+            </span>
+          </div>
+          {explication && (
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
+              {explication}
+            </div>
+          )}
+          {dateCalcul && (
+            <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
+              Mis a jour le {new Date(dateCalcul).toLocaleDateString('fr-FR')}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function MetriqueCard({ label, valeur, couleur }) {
   return (

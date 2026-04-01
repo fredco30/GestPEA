@@ -151,6 +151,7 @@ class TitreListSerializer(serializers.ModelSerializer):
             'nb_actions', 'prix_revient_moyen',
             'dernier_cours', 'variation_jour',
             'sentiment_global', 'valeur_position', 'plus_moins_value',
+            'score_conviction',
         ]
 
     def get_dernier_cours(self, obj):
@@ -195,6 +196,7 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             'sentiments_30j', 'signaux_actifs',
             'alertes_recentes', 'articles_recents',
             'notes',
+            'score_conviction', 'explication_conviction', 'date_calcul_conviction',
         ]
 
     def get_prix_historique(self, obj):

@@ -50,6 +50,14 @@ class Titre(models.Model):
                                              null=True, blank=True)
     date_premier_achat = models.DateField(null=True, blank=True)
 
+    # Score de conviction IA (étape 34)
+    score_conviction       = models.IntegerField(null=True, blank=True,
+                                                  validators=[MinValueValidator(0), MaxValueValidator(100)],
+                                                  help_text="Score 0-100 combinant technique+fondamentaux+sentiment+historique")
+    explication_conviction = models.TextField(blank=True,
+                                              help_text="Explication IA 2-3 phrases du score de conviction")
+    date_calcul_conviction = models.DateTimeField(null=True, blank=True)
+
     # Métadonnées
     actif        = models.BooleanField(default=True)
     date_ajout   = models.DateTimeField(auto_now_add=True)
