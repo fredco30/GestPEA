@@ -315,6 +315,19 @@ function NavTitre({ titre, actif, onClick, onSupprimer, onChangerStatut, labelSt
               : '\u2014'}
           </div>
         </div>
+        {titre.score_conviction != null && (
+          <span style={{
+            fontSize: 9, fontWeight: 600, padding: '1px 4px', borderRadius: 4, flexShrink: 0,
+            background: titre.score_conviction >= 70 ? 'var(--color-background-success)'
+              : titre.score_conviction >= 40 ? 'var(--color-background-warning)'
+              : 'var(--color-background-danger)',
+            color: titre.score_conviction >= 70 ? 'var(--color-text-success)'
+              : titre.score_conviction >= 40 ? 'var(--color-text-warning)'
+              : 'var(--color-text-danger)',
+          }}>
+            {titre.score_conviction}
+          </span>
+        )}
         {sentiment && (
           <div style={{
             width: 6, height: 6, borderRadius: '50%', flexShrink: 0,

@@ -137,11 +137,23 @@ def fetch_fondamentaux_lot_task(self, lot: str):
             except Exception as e:
                 logger.error(f"[Task] FMP global — erreur : {e}")
 
+        # --- Analyse fondamentale IA (étape 30) ---
+        nb_analyses = 0
+        from app.services.scoring_llm import generer_analyse_fondamentale
+        for ticker in tickers:
+            try:
+                result = generer_analyse_fondamentale(ticker)
+                if result:
+                    nb_analyses += 1
+            except Exception as e:
+                logger.error(f"[Task] Analyse fondamentale IA {ticker} : {e}")
+
         return {
             'status': 'ok',
             'lot': lot,
             'succes_eodhd': succes_eodhd,
             'succes_fmp': succes_fmp,
+            'analyses_ia': nb_analyses,
             'echecs': echecs,
             'requetes_eodhd': client_eodhd.nb_requetes_session,
         }
@@ -501,6 +513,10 @@ def run_confluence_task(self):
             scorer_alerte_task.delay(alerte.id)
 
     logger.info(f"[Task] run_confluence : {alertes_creees} alertes créées")
+
+    # Enchaîner le calcul des scores de conviction
+    calculer_convictions_task.delay()
+
     return {'status': 'ok', 'alertes': alertes_creees}
 
 
@@ -536,6 +552,46 @@ def _calculer_score_confluence(titre, signaux) -> float:
         score = min(10.0, score + 0.5)
 
     return round(score, 1)
+
+
+# ---------------------------------------------------------------------------
+# 6b. SCORE DE CONVICTION IA — après confluence
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=1)
+def calculer_convictions_task(self):
+    """
+    Calcule le score de conviction IA (0-100) pour tous les titres actifs.
+    Enchaîné automatiquement après run_confluence_task.
+    """
+    from app.models import Titre
+    from app.services.conviction import calculer_score_conviction
+
+    try:
+        tickers = list(
+            Titre.objects.filter(actif=True)
+            .exclude(statut='archive')
+            .values_list('ticker', flat=True)
+        )
+
+        ok, ko = [], []
+        for ticker in tickers:
+            try:
+                result = calculer_score_conviction(ticker)
+                if result:
+                    ok.append(f"{ticker}={result['score']}")
+                else:
+                    ko.append(f"{ticker}=no_data")
+            except Exception as e:
+                logger.error(f"[Task] conviction {ticker} : {e}")
+                ko.append(ticker)
+
+        logger.info(f"[Task] calculer_convictions : {len(ok)} OK, {len(ko)} KO")
+        return {'status': 'ok', 'ok': ok, 'ko': ko}
+
+    except Exception as exc:
+        logger.error(f"[Task] calculer_convictions — erreur : {exc}", exc_info=True)
+        raise self.retry(exc=exc)
 
 
 # ---------------------------------------------------------------------------

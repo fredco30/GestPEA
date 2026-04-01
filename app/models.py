@@ -50,6 +50,14 @@ class Titre(models.Model):
                                              null=True, blank=True)
     date_premier_achat = models.DateField(null=True, blank=True)
 
+    # Score de conviction IA (étape 34)
+    score_conviction       = models.IntegerField(null=True, blank=True,
+                                                  validators=[MinValueValidator(0), MaxValueValidator(100)],
+                                                  help_text="Score 0-100 combinant technique+fondamentaux+sentiment+historique")
+    explication_conviction = models.TextField(blank=True,
+                                              help_text="Explication IA 2-3 phrases du score de conviction")
+    date_calcul_conviction = models.DateTimeField(null=True, blank=True)
+
     # Métadonnées
     actif        = models.BooleanField(default=True)
     date_ajout   = models.DateTimeField(auto_now_add=True)
@@ -205,6 +213,10 @@ class Fondamentaux(models.Model):
     nb_analystes         = models.PositiveSmallIntegerField(null=True, blank=True)
     consensus            = models.CharField(max_length=20, blank=True,
                                             help_text="Buy / Hold / Sell")
+
+    # Analyse IA (étape 30)
+    analyse_ia = models.TextField(blank=True,
+                                   help_text="Analyse qualitative IA : forces, faiblesses, positionnement sectoriel")
 
     # Source
     source = models.CharField(max_length=20, default='eodhd',
@@ -679,3 +691,39 @@ class ApiQuota(models.Model):
     def restantes(self):
         limites = {'eodhd': 20, 'fmp': 250, 'newsapi': 100}
         return max(0, limites.get(self.api, 0) - self.nb_requetes)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENTS PAR TITRE (base documentaire / GMAO légère)
+# ---------------------------------------------------------------------------
+
+class DocumentTitre(models.Model):
+    """
+    Document associé à un titre : rapport annuel, étude clinique, news, analyse, etc.
+    Le texte est extrait automatiquement pour être exploité par l'IA.
+    """
+
+    TYPE_DOC_CHOICES = [
+        ('rapport_annuel', 'Rapport annuel'),
+        ('etude_clinique', 'Étude clinique'),
+        ('news', 'Article / News'),
+        ('analyse', 'Analyse / Note'),
+        ('autre', 'Autre'),
+    ]
+
+    titre         = models.ForeignKey(Titre, on_delete=models.CASCADE, related_name='documents')
+    fichier       = models.FileField(upload_to='documents/%Y/%m/')
+    nom           = models.CharField(max_length=200, help_text="Nom affiché du document")
+    type_doc      = models.CharField(max_length=20, choices=TYPE_DOC_CHOICES, default='autre')
+    taille        = models.PositiveIntegerField(default=0, help_text="Taille en octets")
+    texte_extrait = models.TextField(blank=True, help_text="Contenu textuel extrait pour l'IA")
+    resume_ia     = models.TextField(blank=True, help_text="Résumé IA du document (3-5 phrases)")
+    date_upload   = models.DateTimeField(auto_now_add=True)
+    notes         = models.TextField(blank=True, help_text="Commentaire libre de l'utilisateur")
+
+    class Meta:
+        ordering = ['-date_upload']
+        verbose_name = 'Document'
+
+    def __str__(self):
+        return f"{self.nom} ({self.titre.ticker})"

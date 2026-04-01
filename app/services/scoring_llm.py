@@ -679,9 +679,23 @@ def generer_texte_alerte(alerte_id: int) -> bool:
         "capacite_versement":  float(profil.capacite_versement_restante) if profil else None,
     }
 
+    # --- Niveaux de prix techniques ---
+    from app.models import PrixJournalier
+    bougie = PrixJournalier.objects.filter(titre=titre).order_by('-date').first()
+    niveaux_ctx = {}
+    if bougie:
+        niveaux_ctx = {
+            "cours_actuel": str(bougie.cloture),
+            "support_mm50": str(bougie.mm_50) if bougie.mm_50 else "N/D",
+            "support_mm200": str(bougie.mm_200) if bougie.mm_200 else "N/D",
+            "support_bollinger_bas": str(bougie.boll_inf) if bougie.boll_inf else "N/D",
+            "resistance_bollinger_haut": str(bougie.boll_sup) if bougie.boll_sup else "N/D",
+            "objectif_analystes": str(fond.objectif_cours_moyen) if fond and fond.objectif_cours_moyen else "N/D",
+        }
+
     # --- Construire le prompt ---
 
-    prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur particulier gérant son PEA en mode long terme (accumulation, pas de day trading).
+    prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur DÉBUTANT gérant son PEA en mode long terme. Cette personne n'a AUCUNE connaissance technique — elle ne sait pas ce qu'est un RSI, un MACD ou des bandes de Bollinger.
 
 TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur}
 DATE : {alerte.date_signal}
@@ -691,6 +705,9 @@ NIVEAU : {alerte.niveau}
 
 SIGNAUX DÉTECTÉS :
 {json.dumps(signaux, ensure_ascii=False, indent=2, default=str)}
+
+NIVEAUX DE PRIX CLÉS :
+{json.dumps(niveaux_ctx, ensure_ascii=False, indent=2)}
 
 FONDAMENTAUX :
 {json.dumps({k: str(v) if v is not None else 'N/D' for k, v in fond_ctx.items()}, ensure_ascii=False, indent=2)}
@@ -707,18 +724,24 @@ PROFIL INVESTISSEUR :
 
 INSTRUCTIONS DE RÉDACTION :
 1. Commence par une ligne de titre : "NOM_TITRE · Type d'opportunité · Score X/10"
-2. Liste les signaux détectés sous forme de tirets courts et précis
-3. Rédige 2-3 phrases de contexte IA en langage naturel professionnel
-4. Mentionne la fiabilité historique si > 0 occurrences
-5. Si le titre est éligible PEA et que la capacité de versement est connue, mentionne-la
+2. Explique la situation en langage SIMPLE (pas de jargon technique : pas de RSI, MACD, Bollinger, MM50)
+3. Indique clairement les NIVEAUX DE PRIX EN EUROS :
+   - "Zone de support autour de XX €" (niveau en dessous duquel le titre pourrait baisser davantage)
+   - "Zone de résistance vers XX €" (niveau au-dessus duquel le titre aurait du mal à monter)
+   - "Zone d'entrée potentielle entre XX € et XX €" si pertinent
+   - "Objectif des analystes : XX €" si disponible
+4. Rédige 2-3 phrases de contexte en langage naturel accessible
+5. Mentionne la fiabilité historique si > 0 occurrences
 6. Termine TOUJOURS par cette phrase exacte sur une nouvelle ligne :
    "— Cette observation ne constitue pas un conseil d'investissement."
 
 CONTRAINTES ABSOLUES :
 - Ne jamais utiliser les mots "acheter", "vendre", "investir", "placer"
 - Parler de "renforcement", "point d'entrée potentiel", "opportunité à étudier"
-- Ton professionnel, factuel, sans exclamation
-- Maximum 200 mots
+- TOUJOURS donner des niveaux de prix concrets en euros
+- Pas de jargon technique — traduire en langage courant
+- Ton professionnel mais accessible, sans exclamation
+- Maximum 250 mots
 - Langue : français"""
 
     try:
@@ -830,7 +853,123 @@ def _calculer_fiabilite_historique(titre, signaux: list) -> tuple[Optional[float
 
 
 # ---------------------------------------------------------------------------
-# 4. RÉSUMÉ HEBDOMADAIRE (digest vendredi soir)
+# 4. ANALYSE FONDAMENTALE IA (étape 30)
+# ---------------------------------------------------------------------------
+
+def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
+    """
+    Génère une analyse qualitative des fondamentaux d'un titre via Mistral.
+    Forces, faiblesses, positionnement sectoriel — en langage simple.
+
+    Met à jour Fondamentaux.analyse_ia et retourne le texte.
+    Retourne None si pas de fondamentaux disponibles.
+    """
+    from app.models import Fondamentaux, PrixJournalier, Titre
+
+    try:
+        titre = Titre.objects.get(ticker=ticker, actif=True)
+    except Titre.DoesNotExist:
+        return None
+
+    fond = Fondamentaux.objects.filter(titre=titre).order_by('-date_maj').first()
+    if not fond:
+        logger.info("[LLM] analyse_fondamentale %s : pas de fondamentaux", ticker)
+        return None
+
+    # Cours actuel pour contextualiser
+    bougie = PrixJournalier.objects.filter(titre=titre).order_by('-date').first()
+    cours_str = f"{bougie.cloture} €" if bougie else "N/D"
+
+    # Construire le contexte fondamentaux
+    fond_data = {
+        "PER": str(fond.per) if fond.per else "N/D",
+        "PER forward": str(fond.per_forward) if fond.per_forward else "N/D",
+        "PEG": str(fond.peg) if fond.peg else "N/D",
+        "ROE": f"{fond.roe}%" if fond.roe else "N/D",
+        "ROA": f"{fond.roa}%" if fond.roa else "N/D",
+        "Marge nette": f"{fond.marge_nette}%" if fond.marge_nette else "N/D",
+        "Marge opérationnelle": f"{fond.marge_operationnelle}%" if fond.marge_operationnelle else "N/D",
+        "Dette nette / EBITDA": str(fond.dette_nette_ebitda) if fond.dette_nette_ebitda else "N/D",
+        "Couverture intérêts": str(fond.couverture_interets) if fond.couverture_interets else "N/D",
+        "Croissance BPA 1 an": f"{fond.croissance_bpa_1an}%" if fond.croissance_bpa_1an else "N/D",
+        "Croissance BPA 3 ans": f"{fond.croissance_bpa_3ans}%" if fond.croissance_bpa_3ans else "N/D",
+        "Croissance CA 1 an": f"{fond.croissance_ca_1an}%" if fond.croissance_ca_1an else "N/D",
+        "Rendement dividende": f"{fond.rendement_dividende}%" if fond.rendement_dividende else "N/D",
+        "Payout ratio": f"{fond.payout_ratio}%" if fond.payout_ratio else "N/D",
+        "Consensus analystes": fond.consensus or "N/D",
+        "Objectif cours moyen": f"{fond.objectif_cours_moyen} €" if fond.objectif_cours_moyen else "N/D",
+        "Nb analystes": str(fond.nb_analystes) if fond.nb_analystes else "N/D",
+        "Score qualité": f"{fond.score_qualite}/10" if fond.score_qualite else "N/D",
+    }
+
+    # Documents ajoutés par l'utilisateur
+    from app.models import DocumentTitre
+    docs = DocumentTitre.objects.filter(titre=titre).order_by('-date_upload')[:3]
+    docs_ctx = ""
+    if docs:
+        docs_lines = []
+        for doc in docs:
+            docs_lines.append(f"- [{doc.get_type_doc_display()}] {doc.nom}")
+            if doc.resume_ia:
+                docs_lines.append(f"  Résumé : {doc.resume_ia[:300]}")
+        docs_ctx = f"\n\nDOCUMENTS AJOUTÉS PAR L'UTILISATEUR :\n" + "\n".join(docs_lines)
+
+    prompt = f"""Analyse les fondamentaux de {titre.nom} ({titre.ticker}), secteur {titre.secteur or 'inconnu'}.
+Cours actuel : {cours_str}
+
+DONNÉES FONDAMENTALES :
+{json.dumps(fond_data, ensure_ascii=False, indent=2)}{docs_ctx}
+
+Rédige une analyse qualitative en 4-6 phrases pour un DÉBUTANT en bourse :
+
+1. **Forces** : ce qui est solide (rentabilité, croissance, dividende, bilan sain)
+2. **Faiblesses** : ce qui est préoccupant (valorisation élevée, dette, marges faibles)
+3. **Positionnement** : comment se situe l'entreprise dans son secteur
+4. Si l'objectif des analystes est disponible, indique le potentiel en € et en %
+5. Si des documents ont été ajoutés (rapports, études), intègre les informations clés dans l'analyse
+
+RÈGLES :
+- Langage SIMPLE, pas de jargon (explique PER, ROE etc. en mots simples si tu les mentionnes)
+- Donne des niveaux de prix en € quand pertinent
+- Pas de conseil d'investissement
+- Termine par : "⚠️ Cette analyse ne constitue pas un conseil d'investissement."
+- Réponds directement, pas de titre ni d'introduction"""
+
+    try:
+        client = _get_client()
+        response = client.chat.complete(
+            model=MODEL_ALERTE,  # mistral-large pour la qualité rédactionnelle
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un analyste financier qui rédige des analyses fondamentales "
+                    "en langage simple pour des débutants. Tu ne donnes jamais de conseils "
+                    "d'investissement. Tu donnes des niveaux de prix en euros."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=600,
+            temperature=0.2,
+        )
+        texte = response.choices[0].message.content.strip()
+
+        disclaimer = "⚠️ Cette analyse ne constitue pas un conseil d'investissement."
+        if disclaimer not in texte:
+            texte += f"\n\n{disclaimer}"
+
+        # Sauvegarder
+        fond.analyse_ia = texte
+        fond.save(update_fields=['analyse_ia'])
+
+        logger.info("[LLM] analyse_fondamentale %s : %d caractères", ticker, len(texte))
+        return texte
+
+    except Exception as e:
+        logger.error("[LLM] analyse_fondamentale %s — erreur : %s", ticker, e, exc_info=True)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 5. RÉSUMÉ HEBDOMADAIRE (digest vendredi soir)
 # ---------------------------------------------------------------------------
 
 def generer_digest_hebdomadaire() -> str:

@@ -73,4 +73,13 @@ urlpatterns = [
     path('chat/',
          views.ChatView.as_view(),
          name='chat-ia'),
+
+    # --- Documents ---
+    path('titres/<str:ticker>/documents/',
+         views.DocumentListView.as_view(),
+         name='document-list'),
+
+    path('titres/<str:ticker>/documents/<int:pk>/',
+         views.DocumentDetailView.as_view(),
+         name='document-detail'),
 ]

@@ -14,6 +14,7 @@ from app.models import (
     Titre, PrixJournalier, Fondamentaux,
     ScoreSentiment, Article, Signal,
     AlerteConfig, Alerte, ProfilInvestisseur, ApiQuota,
+    DocumentTitre,
 )
 
 
@@ -81,6 +82,8 @@ class FondamentauxSerializer(serializers.ModelSerializer):
             'objectif_cours_moyen', 'nb_analystes', 'consensus',
             # Calculé
             'score_qualite',
+            # Analyse IA
+            'analyse_ia',
         ]
 
 
@@ -151,6 +154,7 @@ class TitreListSerializer(serializers.ModelSerializer):
             'nb_actions', 'prix_revient_moyen',
             'dernier_cours', 'variation_jour',
             'sentiment_global', 'valeur_position', 'plus_moins_value',
+            'score_conviction',
         ]
 
     def get_dernier_cours(self, obj):
@@ -195,6 +199,7 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             'sentiments_30j', 'signaux_actifs',
             'alertes_recentes', 'articles_recents',
             'notes',
+            'score_conviction', 'explication_conviction', 'date_calcul_conviction',
         ]
 
     def get_prix_historique(self, obj):
@@ -420,3 +425,27 @@ class DashboardSerializer(serializers.Serializer):
 
     # Quota API du jour
     quotas = ApiQuotaSerializer(many=True)
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENTS
+# ---------------------------------------------------------------------------
+
+class DocumentTitreSerializer(serializers.ModelSerializer):
+    url_fichier   = serializers.SerializerMethodField()
+    type_doc_display = serializers.CharField(source='get_type_doc_display', read_only=True)
+
+    class Meta:
+        model  = DocumentTitre
+        fields = [
+            'id', 'nom', 'type_doc', 'type_doc_display', 'taille',
+            'resume_ia', 'date_upload', 'notes', 'url_fichier',
+        ]
+
+    def get_url_fichier(self, obj):
+        if obj.fichier:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.fichier.url)
+            return obj.fichier.url
+        return None
