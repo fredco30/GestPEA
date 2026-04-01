@@ -81,6 +81,8 @@ class FondamentauxSerializer(serializers.ModelSerializer):
             'objectif_cours_moyen', 'nb_analystes', 'consensus',
             # Calculé
             'score_qualite',
+            # Analyse IA
+            'analyse_ia',
         ]
 
 

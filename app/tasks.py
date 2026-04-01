@@ -137,11 +137,23 @@ def fetch_fondamentaux_lot_task(self, lot: str):
             except Exception as e:
                 logger.error(f"[Task] FMP global — erreur : {e}")
 
+        # --- Analyse fondamentale IA (étape 30) ---
+        nb_analyses = 0
+        from app.services.scoring_llm import generer_analyse_fondamentale
+        for ticker in tickers:
+            try:
+                result = generer_analyse_fondamentale(ticker)
+                if result:
+                    nb_analyses += 1
+            except Exception as e:
+                logger.error(f"[Task] Analyse fondamentale IA {ticker} : {e}")
+
         return {
             'status': 'ok',
             'lot': lot,
             'succes_eodhd': succes_eodhd,
             'succes_fmp': succes_fmp,
+            'analyses_ia': nb_analyses,
             'echecs': echecs,
             'requetes_eodhd': client_eodhd.nb_requetes_session,
         }

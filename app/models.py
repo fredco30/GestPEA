@@ -214,6 +214,10 @@ class Fondamentaux(models.Model):
     consensus            = models.CharField(max_length=20, blank=True,
                                             help_text="Buy / Hold / Sell")
 
+    # Analyse IA (étape 30)
+    analyse_ia = models.TextField(blank=True,
+                                   help_text="Analyse qualitative IA : forces, faiblesses, positionnement sectoriel")
+
     # Source
     source = models.CharField(max_length=20, default='eodhd',
                                help_text="eodhd | fmp | manuel")

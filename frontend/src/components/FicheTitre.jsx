@@ -322,6 +322,21 @@ function CarteFondamentaux({ fond }) {
           ))}
         </div>
       )}
+
+      {/* Analyse fondamentale IA */}
+      {fond.analyse_ia && (
+        <div style={{
+          borderTop: '0.5px solid var(--color-border-tertiary)',
+          paddingTop: 10, marginTop: ouvert ? 10 : 8,
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-text-tertiary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Analyse IA des fondamentaux
+          </div>
+          <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+            {fond.analyse_ia.replace(/\*\*/g, '').replace(/^#+\s.*/gm, '').trim()}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
