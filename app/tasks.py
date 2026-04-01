@@ -83,9 +83,11 @@ def fetch_fondamentaux_lot_task(self, lot: str):
     """
     Récupère les fondamentaux pour le lot A ou B.
     Rotation : lot A lundi+mercredi, lot B mardi+jeudi.
+    Source principale : EODHD. Complément : FMP (champs manquants).
     """
     from app.models import Titre
     from app.services.eodhd import EODHDClient
+    from app.services.fmp import FMPClient
 
     if lot not in ('A', 'B'):
         logger.error(f"[Task] fetch_fondamentaux_lot : lot invalide '{lot}'")
@@ -104,25 +106,44 @@ def fetch_fondamentaux_lot_task(self, lot: str):
 
         logger.info(f"[Task] fetch_fondamentaux lot {lot} : {len(tickers)} tickers")
 
-        client = EODHDClient()
-        succes = 0
+        # --- Source 1 : EODHD (principale) ---
+        client_eodhd = EODHDClient()
+        succes_eodhd = 0
         echecs = []
 
         for ticker in tickers:
             try:
-                fond = client.maj_fondamentaux(ticker)
+                fond = client_eodhd.maj_fondamentaux(ticker)
                 if fond:
-                    succes += 1
+                    succes_eodhd += 1
             except Exception as e:
-                logger.error(f"[Task] Erreur fondamentaux {ticker} : {e}")
+                logger.error(f"[Task] Erreur fondamentaux EODHD {ticker} : {e}")
                 echecs.append(ticker)
+
+        # --- Source 2 : FMP (complément, champs manquants) ---
+        succes_fmp = 0
+        from django.conf import settings
+        if settings.FMP_API_KEY:
+            try:
+                client_fmp = FMPClient()
+                for ticker in tickers:
+                    try:
+                        fond = client_fmp.maj_fondamentaux(ticker)
+                        if fond:
+                            succes_fmp += 1
+                    except Exception as e:
+                        logger.error(f"[Task] Erreur fondamentaux FMP {ticker} : {e}")
+                client_fmp.maj_quota()
+            except Exception as e:
+                logger.error(f"[Task] FMP global — erreur : {e}")
 
         return {
             'status': 'ok',
             'lot': lot,
-            'succes': succes,
+            'succes_eodhd': succes_eodhd,
+            'succes_fmp': succes_fmp,
             'echecs': echecs,
-            'requetes': client.nb_requetes_session,
+            'requetes_eodhd': client_eodhd.nb_requetes_session,
         }
 
     except Exception as exc:
@@ -137,11 +158,12 @@ def fetch_fondamentaux_lot_task(self, lot: str):
 @shared_task(bind=True, max_retries=2, default_retry_delay=300)
 def fetch_news_task(self):
     """
-    Collecte les actualités pour tous les titres actifs en une seule requête EODHD.
+    Collecte les actualités pour tous les titres actifs via EODHD + NewsAPI.
     Déclenche ensuite le scoring LLM sur les articles non scorés.
     """
     from app.models import Article, Titre
     from app.services.eodhd import EODHDClient
+    from app.services.newsapi_client import NewsAPIClient
 
     try:
         tickers = list(
@@ -153,23 +175,41 @@ def fetch_news_task(self):
         if not tickers:
             return {'status': 'skip', 'raison': 'aucun titre'}
 
-        client = EODHDClient()
-        nb_crees = client.import_news(tickers)
+        nb_total = 0
+
+        # --- Source 1 : EODHD (news mutualisée, 1 requête) ---
+        client_eodhd = EODHDClient()
+        nb_eodhd = client_eodhd.import_news(tickers)
+        nb_total += nb_eodhd
+        logger.info(f"[Task] fetch_news EODHD : {nb_eodhd} articles créés")
+
+        # --- Source 2 : NewsAPI (recherche par titre, presse FR) ---
+        from django.conf import settings
+        if settings.NEWSAPI_KEY:
+            try:
+                client_newsapi = NewsAPIClient()
+                nb_newsapi = client_newsapi.import_news_pour_titres(tickers)
+                nb_total += nb_newsapi
+                client_newsapi.maj_quota()
+                logger.info(f"[Task] fetch_news NewsAPI : {nb_newsapi} articles créés")
+            except Exception as e:
+                logger.error(f"[Task] fetch_news NewsAPI — erreur : {e}")
 
         # Déclencher le scoring LLM sur les articles non scorés
-        if nb_crees > 0:
+        if nb_total > 0:
             article_ids = list(
                 Article.objects.filter(score_sentiment__isnull=True)
                 .values_list('id', flat=True)
             )
             if article_ids:
                 scorer_articles_task.delay(article_ids)
-                logger.info(f"[Task] fetch_news : {nb_crees} articles créés → scoring LLM lancé")
+                logger.info(f"[Task] fetch_news : {nb_total} articles créés → scoring LLM lancé")
 
         return {
             'status': 'ok',
-            'articles_crees': nb_crees,
-            'requetes': client.nb_requetes_session,
+            'articles_crees': nb_total,
+            'sources': {'eodhd': nb_eodhd, 'newsapi': nb_total - nb_eodhd},
+            'requetes_eodhd': client_eodhd.nb_requetes_session,
         }
 
     except Exception as exc:
