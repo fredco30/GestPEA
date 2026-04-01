@@ -5,7 +5,7 @@
  * Toutes les fonctions retournent des Promises.
  */
 
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api'
+const BASE_URL = process.env.REACT_APP_API_URL || '/api'
 
 // ---------------------------------------------------------------------------
 // Utilitaire HTTP
