@@ -253,9 +253,12 @@ export default function ChatIA({ ticker }) {
         <div style={STYLES.panel}>
           {/* Header */}
           <div style={STYLES.header}>
-            <div>
-              <span style={STYLES.headerTitle}>Chat IA</span>
-              {ticker && <span style={STYLES.headerTicker}>{ticker}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <img src="/chatbot.png" alt="IA" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+              <div>
+                <span style={STYLES.headerTitle}>Assistant IA</span>
+                {ticker && <span style={STYLES.headerTicker}>{ticker}</span>}
+              </div>
             </div>
             <button style={STYLES.closeBtn} onClick={() => setOpen(false)}>{'\u2715'}</button>
           </div>
@@ -269,17 +272,27 @@ export default function ChatIA({ ticker }) {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i}>
-                <div style={msg.role === 'user' ? STYLES.msgUser : STYLES.msgBot}>
-                  {msg.content}
-                </div>
-                {msg.disclaimer && (
-                  <div style={STYLES.disclaimer}>{msg.disclaimer}</div>
+              <div key={i} style={msg.role === 'bot' ? { display: 'flex', alignItems: 'flex-start', gap: 8 } : {}}>
+                {msg.role === 'bot' && (
+                  <img src="/chatbot.png" alt="IA" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, marginTop: 2 }} />
                 )}
+                <div>
+                  <div style={msg.role === 'user' ? STYLES.msgUser : STYLES.msgBot}>
+                    {msg.content}
+                  </div>
+                  {msg.disclaimer && (
+                    <div style={STYLES.disclaimer}>{msg.disclaimer}</div>
+                  )}
+                </div>
               </div>
             ))}
 
-            {loading && <div style={STYLES.typing}>L'IA reflechit...</div>}
+            {loading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <img src="/chatbot.png" alt="IA" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                <div style={STYLES.typing}>réfléchit...</div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
