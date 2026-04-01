@@ -68,4 +68,9 @@ urlpatterns = [
     path('quota/',
          views.QuotaView.as_view(),
          name='quota'),
+
+    # --- Chat IA ---
+    path('chat/',
+         views.ChatView.as_view(),
+         name='chat-ia'),
 ]

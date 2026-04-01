@@ -665,3 +665,30 @@ class QuotaView(APIView):
             })
 
         return Response(sorted(data, key=lambda x: x['api']))
+
+
+# -----------------------------------------------------------------------
+# Chat IA
+# -----------------------------------------------------------------------
+
+class ChatView(APIView):
+    """POST /api/chat/ — Chat IA contextuel."""
+
+    def post(self, request):
+        question = request.data.get('question', '').strip()
+        if not question:
+            return Response(
+                {'error': 'Le champ "question" est requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ticker = request.data.get('ticker', None)
+
+        from app.services.chat_ia import chat_ia, DISCLAIMER
+        reponse = chat_ia(question, ticker=ticker)
+
+        return Response({
+            'reponse': reponse,
+            'ticker': ticker,
+            'disclaimer': DISCLAIMER,
+        })

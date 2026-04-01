@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getTitres, getDashboard, createTitre, deleteTitre, updateTitre } from '../api/client'
 import FicheTitre from '../components/FicheTitre'
+import ChatIA from '../components/ChatIA'
 import { ListeSurveillance, PanneauAlertes, QuotaBadge } from '../components/utilitaires'
 
 const ONGLETS_NAV = [
@@ -243,6 +244,9 @@ export default function Dashboard() {
           <PanneauAlertes />
         )}
       </main>
+
+      {/* Chat IA contextuel */}
+      <ChatIA ticker={tickerActif} />
 
     </div>
   )

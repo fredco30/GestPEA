@@ -146,3 +146,11 @@ export const updateProfil = (data) =>
 
 export const getQuota = () =>
   get('/quota/')
+
+// ---------------------------------------------------------------------------
+// CHAT IA
+// ---------------------------------------------------------------------------
+
+/** Envoyer une question au chat IA contextuel */
+export const chatIA = (question, ticker = null) =>
+  post('/chat/', { question, ticker })
