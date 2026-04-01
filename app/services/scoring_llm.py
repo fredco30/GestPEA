@@ -679,9 +679,23 @@ def generer_texte_alerte(alerte_id: int) -> bool:
         "capacite_versement":  float(profil.capacite_versement_restante) if profil else None,
     }
 
+    # --- Niveaux de prix techniques ---
+    from app.models import PrixJournalier
+    bougie = PrixJournalier.objects.filter(titre=titre).order_by('-date').first()
+    niveaux_ctx = {}
+    if bougie:
+        niveaux_ctx = {
+            "cours_actuel": str(bougie.cloture),
+            "support_mm50": str(bougie.mm_50) if bougie.mm_50 else "N/D",
+            "support_mm200": str(bougie.mm_200) if bougie.mm_200 else "N/D",
+            "support_bollinger_bas": str(bougie.boll_inf) if bougie.boll_inf else "N/D",
+            "resistance_bollinger_haut": str(bougie.boll_sup) if bougie.boll_sup else "N/D",
+            "objectif_analystes": str(fond.objectif_cours_moyen) if fond and fond.objectif_cours_moyen else "N/D",
+        }
+
     # --- Construire le prompt ---
 
-    prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur particulier gérant son PEA en mode long terme (accumulation, pas de day trading).
+    prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur DÉBUTANT gérant son PEA en mode long terme. Cette personne n'a AUCUNE connaissance technique — elle ne sait pas ce qu'est un RSI, un MACD ou des bandes de Bollinger.
 
 TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur}
 DATE : {alerte.date_signal}
@@ -691,6 +705,9 @@ NIVEAU : {alerte.niveau}
 
 SIGNAUX DÉTECTÉS :
 {json.dumps(signaux, ensure_ascii=False, indent=2, default=str)}
+
+NIVEAUX DE PRIX CLÉS :
+{json.dumps(niveaux_ctx, ensure_ascii=False, indent=2)}
 
 FONDAMENTAUX :
 {json.dumps({k: str(v) if v is not None else 'N/D' for k, v in fond_ctx.items()}, ensure_ascii=False, indent=2)}
@@ -707,18 +724,24 @@ PROFIL INVESTISSEUR :
 
 INSTRUCTIONS DE RÉDACTION :
 1. Commence par une ligne de titre : "NOM_TITRE · Type d'opportunité · Score X/10"
-2. Liste les signaux détectés sous forme de tirets courts et précis
-3. Rédige 2-3 phrases de contexte IA en langage naturel professionnel
-4. Mentionne la fiabilité historique si > 0 occurrences
-5. Si le titre est éligible PEA et que la capacité de versement est connue, mentionne-la
+2. Explique la situation en langage SIMPLE (pas de jargon technique : pas de RSI, MACD, Bollinger, MM50)
+3. Indique clairement les NIVEAUX DE PRIX EN EUROS :
+   - "Zone de support autour de XX €" (niveau en dessous duquel le titre pourrait baisser davantage)
+   - "Zone de résistance vers XX €" (niveau au-dessus duquel le titre aurait du mal à monter)
+   - "Zone d'entrée potentielle entre XX € et XX €" si pertinent
+   - "Objectif des analystes : XX €" si disponible
+4. Rédige 2-3 phrases de contexte en langage naturel accessible
+5. Mentionne la fiabilité historique si > 0 occurrences
 6. Termine TOUJOURS par cette phrase exacte sur une nouvelle ligne :
    "— Cette observation ne constitue pas un conseil d'investissement."
 
 CONTRAINTES ABSOLUES :
 - Ne jamais utiliser les mots "acheter", "vendre", "investir", "placer"
 - Parler de "renforcement", "point d'entrée potentiel", "opportunité à étudier"
-- Ton professionnel, factuel, sans exclamation
-- Maximum 200 mots
+- TOUJOURS donner des niveaux de prix concrets en euros
+- Pas de jargon technique — traduire en langage courant
+- Ton professionnel mais accessible, sans exclamation
+- Maximum 250 mots
 - Langue : français"""
 
     try:
