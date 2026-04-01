@@ -238,7 +238,11 @@ class TitreDetailSerializer(serializers.ModelSerializer):
 
 
 class TitreCreateSerializer(serializers.ModelSerializer):
-    """Serializer pour l'ajout d'un nouveau titre."""
+    """
+    Serializer pour l'ajout d'un nouveau titre.
+    Seul le ticker est obligatoire — les autres champs sont auto-remplis
+    par le service auto_fill via EODHD/FMP.
+    """
 
     class Meta:
         model  = Titre
@@ -247,6 +251,10 @@ class TitreCreateSerializer(serializers.ModelSerializer):
             'secteur', 'statut', 'nb_actions', 'prix_revient_moyen',
             'date_premier_achat', 'notes',
         ]
+        extra_kwargs = {
+            'nom':  {'required': False, 'default': ''},
+            'pays': {'required': False, 'default': ''},
+        }
 
     def validate_ticker(self, value):
         """Normalise le ticker en majuscules."""

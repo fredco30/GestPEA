@@ -98,25 +98,57 @@ class TitreViewSet(ViewSet):
     def create(self, request):
         """
         POST /api/titres/
-        Ajoute un titre et declenche l'import historique en arriere-plan.
+        Ajoute un titre avec auto-remplissage IA.
+        Seul le ticker est requis — place, pays, secteur, eligibilite PEA
+        et seuils d'alerte sont remplis automatiquement via EODHD/FMP.
         """
         serializer = TitreCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # --- Auto-remplissage IA via EODHD/FMP ---
+        from app.services.auto_fill import auto_remplir_titre, seuils_alerte_pour_secteur
+
+        ticker = serializer.validated_data['ticker']
+        metadata = auto_remplir_titre(ticker)
+
+        # Injecter les metadonnees auto-remplies (sans ecraser les valeurs fournies)
+        for champ, valeur in metadata.items():
+            if champ not in serializer.validated_data or not serializer.validated_data[champ]:
+                serializer.validated_data[champ] = valeur
+
         titre = serializer.save()
 
-        # Creer une AlerteConfig par defaut pour ce titre
-        AlerteConfig.objects.get_or_create(titre=titre)
+        # --- Creer une AlerteConfig avec seuils adaptes au secteur ---
+        seuils = seuils_alerte_pour_secteur(titre.secteur)
+        AlerteConfig.objects.get_or_create(
+            titre=titre,
+            defaults={
+                'score_min_declenchement': seuils['score_min'],
+                'seuil_drawdown': seuils['seuil_drawdown'],
+                'alertes_renforcement': True,
+                'ignorer_court_terme': True,
+            }
+        )
 
         # Declencer l'import historique OHLC en tache Celery
         from app.tasks import import_historique_task
         import_historique_task.delay(titre.ticker)
 
-        logger.info(f"[API] Titre ajoute : {titre.ticker} — import historique lance")
+        auto_filled = list(metadata.keys())
+        logger.info(
+            f"[API] Titre ajoute : {titre.ticker} — "
+            f"auto-fill: {', '.join(auto_filled)} — import historique lance"
+        )
 
         return Response(
-            TitreDetailSerializer(titre).data,
+            {
+                **TitreDetailSerializer(titre).data,
+                'auto_fill': {
+                    'champs_remplis': auto_filled,
+                    'source': 'eodhd' if metadata.get('nom') else 'fmp',
+                }
+            },
             status=status.HTTP_201_CREATED
         )
 
