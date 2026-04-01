@@ -36,7 +36,7 @@ const THEME = {
   bordure:    'rgba(0,0,0,0.1)',
 }
 
-const PERIODES = ['1S', '1M', '3M', '6M', '1A', 'MAX']
+const PERIODES = ['1S', '1M', '3M', '6M', '1A']
 
 const INDICATEURS_DEFAUT = {
   mm20: true, mm50: true, mm200: false,
