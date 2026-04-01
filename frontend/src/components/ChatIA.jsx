@@ -228,14 +228,14 @@ export default function ChatIA({ ticker }) {
 
   const suggestions = ticker
     ? [
-        `Analyse ${ticker} en detail`,
-        `Resume la semaine pour ${ticker}`,
-        `Points forts et risques de ${ticker}`,
+        `Analyse complete de ${ticker}`,
+        `Compare ${ticker} aux autres titres`,
+        `Alertes et signaux sur ${ticker}`,
       ]
     : [
-        'Resume mon portefeuille',
-        'Quels titres surveiller ?',
-        'Alertes importantes cette semaine',
+        'Resume global du dashboard',
+        'Quelles alertes meritent attention ?',
+        'Etat de mon portefeuille',
       ]
 
   return (
