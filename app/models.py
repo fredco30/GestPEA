@@ -25,12 +25,12 @@ class Titre(models.Model):
     # Identification
     ticker       = models.CharField(max_length=20, unique=True, help_text="Ex: MC.PA, AI.PA, TTE.PA")
     isin         = models.CharField(max_length=12, blank=True)
-    nom          = models.CharField(max_length=120)
+    nom          = models.CharField(max_length=120, blank=True, help_text="Auto-rempli via EODHD si vide")
     nom_court    = models.CharField(max_length=20, blank=True, help_text="Ex: LVMH, Air Liquide")
 
     # Place boursière
     place        = models.CharField(max_length=20, blank=True, help_text="Ex: EPA, AMS, XETRA")
-    pays         = models.CharField(max_length=3, help_text="Code ISO-3 : FRA, DEU, NLD…")
+    pays         = models.CharField(max_length=3, blank=True, help_text="Code ISO-3 : FRA, DEU, NLD… (auto-rempli)")
     secteur      = models.CharField(max_length=80, blank=True)
     sous_secteur = models.CharField(max_length=80, blank=True)
 
