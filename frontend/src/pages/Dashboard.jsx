@@ -18,9 +18,10 @@ const ONGLETS_NAV = [
 ]
 
 export default function Dashboard() {
-  const [onglet,          setOnglet]         = useState('portefeuille')
+  const [onglet,          setOnglet]         = useState('surveillance')
   const [tickerActif,     setTickerActif]    = useState(null)
   const [titresPf,        setTitresPf]       = useState([])
+  const [titresSv,        setTitresSv]       = useState([])
   const [dashboard,       setDashboard]      = useState(null)
   const [loading,         setLoading]        = useState(true)
 
@@ -28,13 +29,22 @@ export default function Dashboard() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [pf, dash] = await Promise.all([
+        const [pf, sv, dash] = await Promise.all([
           getTitres('portefeuille'),
+          getTitres('surveillance'),
           getDashboard(),
         ])
         setTitresPf(pf)
+        setTitresSv(sv)
         setDashboard(dash)
-        if (pf.length > 0) setTickerActif(pf[0].ticker)
+        // Sélectionner le premier titre disponible
+        if (pf.length > 0) {
+          setOnglet('portefeuille')
+          setTickerActif(pf[0].ticker)
+        } else if (sv.length > 0) {
+          setOnglet('surveillance')
+          setTickerActif(sv[0].ticker)
+        }
       } catch (e) {
         console.error('[Dashboard] init:', e)
       } finally {
@@ -105,19 +115,39 @@ export default function Dashboard() {
               key={o.id}
               label={o.label}
               actif={onglet === o.id}
-              onClick={() => setOnglet(o.id)}
+              onClick={() => {
+                setOnglet(o.id)
+                if (o.id === 'portefeuille' && titresPf.length > 0) setTickerActif(titresPf[0].ticker)
+                if (o.id === 'surveillance' && titresSv.length > 0) setTickerActif(titresSv[0].ticker)
+                if (o.id === 'alertes') setTickerActif(null)
+              }}
               badge={o.id === 'alertes' && dashboard?.nb_alertes_nouvelles > 0
                 ? dashboard.nb_alertes_nouvelles : null}
             />
           ))}
 
-          {/* Separateur + titres du portefeuille */}
+          {/* Separateur + titres selon l'onglet actif */}
           {onglet === 'portefeuille' && titresPf.length > 0 && (
             <>
               <div style={{ padding: '10px 16px 4px', fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Titres
+                Portefeuille
               </div>
               {titresPf.map(t => (
+                <NavTitre
+                  key={t.ticker}
+                  titre={t}
+                  actif={tickerActif === t.ticker}
+                  onClick={() => setTickerActif(t.ticker)}
+                />
+              ))}
+            </>
+          )}
+          {onglet === 'surveillance' && titresSv.length > 0 && (
+            <>
+              <div style={{ padding: '10px 16px 4px', fontSize: 11, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Surveillance
+              </div>
+              {titresSv.map(t => (
                 <NavTitre
                   key={t.ticker}
                   titre={t}
@@ -143,11 +173,13 @@ export default function Dashboard() {
       {/* CONTENU PRINCIPAL                                                 */}
       {/* ---------------------------------------------------------------- */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-        {onglet === 'portefeuille' && tickerActif && (
+        {(onglet === 'portefeuille' || onglet === 'surveillance') && tickerActif && (
           <FicheTitre ticker={tickerActif} />
         )}
-        {onglet === 'surveillance' && (
-          <ListeSurveillance />
+        {(onglet === 'portefeuille' || onglet === 'surveillance') && !tickerActif && (
+          <div style={{ color: 'var(--color-text-tertiary)', fontSize: 14, textAlign: 'center', marginTop: 60 }}>
+            Sélectionnez un titre dans la barre latérale
+          </div>
         )}
         {onglet === 'alertes' && (
           <PanneauAlertes />
