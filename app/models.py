@@ -23,7 +23,8 @@ class Titre(models.Model):
     ]
 
     # Identification
-    ticker       = models.CharField(max_length=20, unique=True, help_text="Ex: MC.PA, AI.PA, TTE.PA")
+    ticker       = models.CharField(max_length=20, unique=True,
+                                     help_text="Ticker (MC.PA), ISIN (FR0010557264) ou nom (AB Science)")
     isin         = models.CharField(max_length=12, blank=True)
     nom          = models.CharField(max_length=120, blank=True, help_text="Auto-rempli via EODHD si vide")
     nom_court    = models.CharField(max_length=20, blank=True, help_text="Ex: LVMH, Air Liquide")

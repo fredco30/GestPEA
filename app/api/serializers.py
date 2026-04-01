@@ -257,7 +257,7 @@ class TitreCreateSerializer(serializers.ModelSerializer):
         }
 
     def validate_ticker(self, value):
-        """Normalise le ticker en majuscules."""
+        """Normalise le ticker en majuscules (la résolution ISIN/nom se fait dans la vue)."""
         return value.upper().strip()
 
     def create(self, validated_data):

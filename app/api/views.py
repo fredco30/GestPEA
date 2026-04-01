@@ -99,16 +99,23 @@ class TitreViewSet(ViewSet):
         """
         POST /api/titres/
         Ajoute un titre avec auto-remplissage IA.
-        Seul le ticker est requis — place, pays, secteur, eligibilite PEA
-        et seuils d'alerte sont remplis automatiquement via EODHD/FMP.
+        Accepte : ticker (MC.PA), ISIN (FR0010557264), nom (AB Science),
+        ou ISIN+code (FR0010557264 AB).
         """
-        serializer = TitreCreateSerializer(data=request.data)
+        # --- Resolution ticker depuis ISIN, nom ou ticker direct ---
+        from app.services.auto_fill import resoudre_ticker, auto_remplir_titre, seuils_alerte_pour_secteur
+
+        saisie = (request.data.get('ticker') or '').strip()
+        ticker_resolu = resoudre_ticker(saisie)
+
+        data = request.data.copy()
+        data['ticker'] = ticker_resolu
+
+        serializer = TitreCreateSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         # --- Auto-remplissage IA via EODHD/FMP ---
-        from app.services.auto_fill import auto_remplir_titre, seuils_alerte_pour_secteur
-
         ticker = serializer.validated_data['ticker']
         metadata = auto_remplir_titre(ticker)
 

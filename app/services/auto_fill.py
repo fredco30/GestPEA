@@ -2,19 +2,23 @@
 app/services/auto_fill.py
 --------------------------
 Service d'auto-remplissage des métadonnées d'un titre.
-Saisir uniquement le ticker → l'IA complète tout automatiquement :
+Saisir un ticker, un ISIN ou un nom d'entreprise → l'IA résout le ticker
+et complète tout automatiquement :
   - nom, nom_court, place, pays, secteur, sous_secteur, isin
   - éligibilité PEA
   - seuils d'alerte adaptés au secteur
 
-Sources : EODHD (fondamentaux/General) + FMP (profil).
+Sources : EODHD (fondamentaux/General + search) + FMP (profil).
 
 Usage :
-    from app.services.auto_fill import auto_remplir_titre
-    titre = auto_remplir_titre('MC.PA')
+    from app.services.auto_fill import resoudre_ticker, auto_remplir_titre
+    ticker = resoudre_ticker('FR0010557264')  # → 'AB.PA'
+    ticker = resoudre_ticker('AB Science')     # → 'AB.PA'
+    titre  = auto_remplir_titre('AB.PA')
 """
 
 import logging
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -82,6 +86,137 @@ SEUILS_PAR_SECTEUR = {
 
 # Défaut si secteur inconnu
 SEUILS_DEFAUT = {'score_min': 5.0, 'seuil_drawdown': 12.0}
+
+
+# Regex pour détecter un ISIN (2 lettres + 10 alphanumériques)
+ISIN_PATTERN = re.compile(r'^[A-Z]{2}[A-Z0-9]{10}$')
+
+# Exchanges européens prioritaires pour le PEA
+EXCHANGES_PEA_PRIORITE = ['PA', 'AS', 'BR', 'MI', 'MC', 'XETRA', 'LSE']
+
+
+def resoudre_ticker(saisie: str) -> str:
+    """
+    Résout une saisie libre en ticker EODHD.
+    Accepte :
+      - un ticker direct : 'MC.PA' → 'MC.PA'
+      - un ISIN : 'FR0010557264' → 'AB.PA'
+      - un nom d'entreprise : 'AB Science' → 'AB.PA'
+      - un ISIN + code : 'FR0010557264 AB' → 'AB.PA'
+
+    Coût quota : 0-1 requête EODHD (search).
+    Retourne le ticker EODHD ou la saisie originale si non résolu.
+    """
+    saisie = saisie.strip().upper()
+
+    if not saisie:
+        return saisie
+
+    # --- Cas 1 : déjà un ticker valide (CODE.EXCHANGE) ---
+    if '.' in saisie and len(saisie.split('.')) == 2:
+        code, exchange = saisie.split('.')
+        if code.isalpha() and len(exchange) <= 6:
+            return saisie
+
+    # --- Extraire ISIN et/ou code de la saisie ---
+    parties = saisie.split()
+    isin_trouve = None
+    code_trouve = None
+
+    for partie in parties:
+        if ISIN_PATTERN.match(partie):
+            isin_trouve = partie
+        elif partie.isalpha() and 1 <= len(partie) <= 10:
+            code_trouve = partie
+
+    # --- Cas 2 : ISIN + code fournis → construire le ticker directement ---
+    if isin_trouve and code_trouve:
+        # Deviner l'exchange depuis le préfixe ISIN
+        exchange = _exchange_depuis_isin(isin_trouve)
+        if exchange:
+            ticker_candidat = f"{code_trouve}.{exchange}"
+            logger.info("Résolution ISIN+code : %s → %s", saisie, ticker_candidat)
+            return ticker_candidat
+
+    # --- Cas 3 : recherche EODHD ---
+    from app.services.eodhd import EODHDClient, EODHDError
+
+    # Terme de recherche : le code, le nom, ou l'ISIN
+    query = code_trouve or saisie.replace(isin_trouve or '', '').strip() or isin_trouve or saisie
+
+    try:
+        client = EODHDClient()
+        resultats = client.recherche_ticker(query)
+
+        if not resultats:
+            logger.warning("Résolution ticker : aucun résultat pour '%s'", query)
+            # Si on a un ISIN + code, tenter PA par défaut
+            if isin_trouve and code_trouve:
+                return f"{code_trouve}.PA"
+            return saisie
+
+        # Filtrer par ISIN si fourni
+        if isin_trouve:
+            match_isin = [r for r in resultats if r.get('ISIN') == isin_trouve]
+            if match_isin:
+                resultats = match_isin
+
+        # Privilégier les exchanges européens PEA
+        meilleur = _choisir_meilleur_resultat(resultats)
+
+        if meilleur:
+            ticker = f"{meilleur['Code']}.{meilleur['Exchange']}"
+            logger.info("Résolution ticker : '%s' → %s (%s)",
+                        saisie, ticker, meilleur.get('Name', ''))
+            return ticker
+
+    except EODHDError as e:
+        logger.error("Résolution ticker EODHD : %s", e)
+
+    # Fallback : si on a un code, essayer .PA (Euronext Paris)
+    if code_trouve:
+        return f"{code_trouve}.PA"
+
+    return saisie
+
+
+def _exchange_depuis_isin(isin: str) -> str:
+    """Déduit l'exchange EODHD probable depuis le préfixe pays de l'ISIN."""
+    prefixe_to_exchange = {
+        'FR': 'PA',     # France → Euronext Paris
+        'NL': 'AS',     # Pays-Bas → Euronext Amsterdam
+        'BE': 'BR',     # Belgique → Euronext Bruxelles
+        'DE': 'XETRA',  # Allemagne → Xetra
+        'IT': 'MI',     # Italie → Milan
+        'ES': 'MC',     # Espagne → Madrid
+        'PT': 'LS',     # Portugal → Lisbonne
+        'IE': 'IR',     # Irlande
+        'FI': 'HE',     # Finlande → Helsinki
+        'AT': 'VI',     # Autriche → Vienne
+        'DK': 'CO',     # Danemark → Copenhague
+        'SE': 'ST',     # Suède → Stockholm
+        'NO': 'OL',     # Norvège → Oslo
+    }
+    return prefixe_to_exchange.get(isin[:2], '')
+
+
+def _choisir_meilleur_resultat(resultats: list[dict]) -> dict | None:
+    """
+    Parmi les résultats EODHD search, choisit le meilleur :
+    priorité aux exchanges européens PEA.
+    """
+    if not resultats:
+        return None
+
+    # Trier : exchanges PEA en premier
+    def score(r):
+        ex = r.get('Exchange', '')
+        if ex in EXCHANGES_PEA_PRIORITE:
+            return EXCHANGES_PEA_PRIORITE.index(ex)
+        return 99
+
+    resultats_tries = sorted(resultats, key=score)
+    return resultats_tries[0]
 
 
 def auto_remplir_titre(ticker: str) -> dict:

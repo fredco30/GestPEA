@@ -41,12 +41,13 @@ class TitreAdmin(admin.ModelAdmin):
         et crée une AlerteConfig avec seuils adaptés au secteur.
         """
         if not change:
-            # Normaliser le ticker
-            obj.ticker = obj.ticker.upper().strip()
+            # Résoudre le ticker depuis ISIN, nom ou ticker direct
+            from app.services.auto_fill import resoudre_ticker, auto_remplir_titre, seuils_alerte_pour_secteur
+
+            saisie = obj.ticker.strip()
+            obj.ticker = resoudre_ticker(saisie)
 
             # Auto-remplissage IA
-            from app.services.auto_fill import auto_remplir_titre, seuils_alerte_pour_secteur
-
             metadata = auto_remplir_titre(obj.ticker)
             for champ, valeur in metadata.items():
                 if not getattr(obj, champ, None):
