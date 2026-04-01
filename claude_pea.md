@@ -2,7 +2,7 @@
 
 > Fichier de référence généré et maintenu au fil des échanges avec Claude.  
 > Objectif : disposer d'un historique complet des décisions d'architecture pour lancer le codage sans avoir à tout réexpliquer.  
-> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — migration Mistral AI + déploiement 51.210.8.158**
+> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — APIs intégrées (EODHD + NewsAPI + FMP) + auto-remplissage IA**
 
 ---
 
@@ -360,6 +360,9 @@ pea_project/
 | `notifications_config.txt` | Guide : variables .env, settings, bot Telegram, mot de passe Gmail | Référence |
 | `pea_deploy.py` | Script Python de déploiement intelligent — scan ports, détection geoclic, config auto | Racine du projet |
 | `update.sh` | Script mise à jour + commandes de maintenance | Racine du projet |
+| `newsapi_client.py` | Client NewsAPI : recherche articles FR, headlines, import en base, quota | `app/services/newsapi_client.py` |
+| `fmp.py` | Client FMP (stable API) : profil, ratios TTM, métriques clés, objectif analystes | `app/services/fmp.py` |
+| `auto_fill.py` | Auto-remplissage titre : métadonnées EODHD/FMP, éligibilité PEA, seuils alerte par secteur | `app/services/auto_fill.py` |
 
 ### Détails scoring LLM (`scoring_llm.py`)
 
@@ -408,7 +411,8 @@ pea_project/
 | 17 | **Déploiement VPS OVH** — Nginx + Gunicorn + Celery + SSL Let's Encrypt | ✅ Fait |
 | 18 | **Migration LLM** — Anthropic → Mistral AI (scoring_llm.py, settings, requirements) | ✅ Fait |
 | 19 | **Déploiement VPS** — 51.210.8.158, Gunicorn:8002, Redis:6380, PostgreSQL partagé | ✅ Fait |
-| 20 | **Auto-remplissage titre par IA** — saisir juste le ticker, l'IA complète place, pays, secteur, éligibilité PEA et seuils d'alerte automatiquement | ⬜ À faire |
+| 20 | **Auto-remplissage titre par IA** — saisir juste le ticker, l'IA complète place, pays, secteur, éligibilité PEA et seuils d'alerte automatiquement | ✅ Fait |
+| 21 | **Intégration APIs serveur** — services NewsAPI + FMP + auto-fill déployés sur VPS | ✅ Fait |
 
 ---
 
