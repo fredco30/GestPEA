@@ -644,3 +644,182 @@ def update_eligibles_pea_task(self):
     except Exception as exc:
         logger.error(f"[Task] update_eligibles_pea — erreur : {exc}", exc_info=True)
         raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# 11. ANALYSE COMPLETE — déclenchée à la création d'un titre
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True)
+def analyse_complete_task(self, ticker: str):
+    """
+    Analyse complète d'un titre nouvellement ajouté :
+      1. Import historique OHLCV (EODHD)
+      2. Calcul indicateurs techniques
+      3. Collecte news toutes sources (historique 1 an)
+      4. Scoring sentiment articles (Mistral)
+      5. Sentiment mixte + rapport IA
+    """
+    import os
+    os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+
+    from app.models import Article, Titre
+    from app.services.eodhd import EODHDClient
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        logger.error(f"[Task] analyse_complete : {ticker} introuvable")
+        return {'status': 'error', 'raison': 'titre introuvable'}
+
+    resultats = {'ticker': ticker}
+
+    # 1. Import historique OHLCV
+    try:
+        client = EODHDClient()
+        nb = client.import_historique_bulk(ticker)
+        resultats['bougies'] = nb
+        logger.info(f"[Task] analyse_complete {ticker} : {nb} bougies importées")
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} import : {e}")
+        resultats['bougies'] = 0
+
+    # 2. Indicateurs techniques
+    try:
+        from app.services.indicators import calculate_indicators
+        calculate_indicators(titre)
+        resultats['indicateurs'] = 'ok'
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} indicateurs : {e}")
+        resultats['indicateurs'] = str(e)
+
+    # 3. Collecte news toutes sources (historique 1 an)
+    nb_articles = 0
+
+    # NewsAPI (7 jours max en gratuit)
+    try:
+        from django.conf import settings
+        if settings.NEWSAPI_KEY:
+            from app.services.newsapi_client import NewsAPIClient
+            newsapi = NewsAPIClient()
+            nb_articles += newsapi.import_news_pour_titres([ticker])
+            newsapi.maj_quota()
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} newsapi : {e}")
+
+    # RSS (Google News 1 an + Boursorama + Zonebourse)
+    try:
+        from app.services.rss_news import RSSCollector
+        rss = RSSCollector()
+        rss_result = rss.import_all_sources([ticker], historique=True)
+        nb_articles += sum(rss_result.values())
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} rss : {e}")
+
+    # Reddit (1 an)
+    try:
+        from app.services.reddit_client import RedditCollector
+        reddit = RedditCollector()
+        nb_articles += reddit.import_reddit_posts([ticker], historique=True)
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} reddit : {e}")
+
+    resultats['articles'] = nb_articles
+
+    # 4. Scoring sentiment
+    try:
+        ids = list(
+            Article.objects.filter(titre=titre, score_sentiment__isnull=True)
+            .values_list('id', flat=True)
+        )
+        if ids:
+            from app.services.scoring_llm import scorer_articles
+            scorer_articles(ids)
+        resultats['scoring'] = len(ids)
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} scoring : {e}")
+
+    # 5. Sentiment mixte + rapport IA
+    try:
+        from app.services.scoring_llm import generer_sentiment_mixte
+        generer_sentiment_mixte(ticker)
+        resultats['sentiment'] = 'ok'
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} sentiment : {e}")
+
+    logger.info(f"[Task] analyse_complete {ticker} terminée : {resultats}")
+    return resultats
+
+
+# ---------------------------------------------------------------------------
+# 12. NEWS SOURCES GRATUITES — 9h00 et 13h00 lun-ven
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=1)
+def fetch_news_gratuites_task(self):
+    """
+    Collecte les actualités depuis les sources gratuites illimitées :
+      - Google News RSS (7 derniers jours)
+      - Boursorama RSS
+      - Zonebourse RSS
+      - Reddit (1 semaine)
+    Puis score les nouveaux articles et met à jour le sentiment.
+    """
+    from app.models import Article, Titre
+
+    try:
+        tickers = list(
+            Titre.objects.filter(actif=True)
+            .exclude(statut='archive')
+            .values_list('ticker', flat=True)
+        )
+        if not tickers:
+            return {'status': 'skip', 'raison': 'aucun titre'}
+
+        nb_total = 0
+
+        # RSS
+        try:
+            from app.services.rss_news import RSSCollector
+            rss = RSSCollector()
+            rss_result = rss.import_all_sources(tickers, historique=False)
+            nb_rss = sum(rss_result.values())
+            nb_total += nb_rss
+            logger.info(f"[Task] news_gratuites RSS : {nb_rss} — {rss_result}")
+        except Exception as e:
+            logger.error(f"[Task] news_gratuites RSS : {e}")
+
+        # Reddit
+        try:
+            from app.services.reddit_client import RedditCollector
+            reddit = RedditCollector()
+            nb_reddit = reddit.import_reddit_posts(tickers, historique=False)
+            nb_total += nb_reddit
+            logger.info(f"[Task] news_gratuites Reddit : {nb_reddit}")
+        except Exception as e:
+            logger.error(f"[Task] news_gratuites Reddit : {e}")
+
+        # Scorer les nouveaux articles
+        if nb_total > 0:
+            ids = list(
+                Article.objects.filter(score_sentiment__isnull=True)
+                .values_list('id', flat=True)
+            )
+            if ids:
+                from app.services.scoring_llm import scorer_articles
+                scorer_articles(ids)
+                logger.info(f"[Task] news_gratuites : {len(ids)} articles scorés")
+
+            # Mettre à jour le sentiment mixte
+            for ticker in tickers:
+                try:
+                    from app.services.scoring_llm import generer_sentiment_mixte
+                    generer_sentiment_mixte(ticker)
+                except Exception as e:
+                    logger.error(f"[Task] news_gratuites sentiment {ticker} : {e}")
+
+        return {'status': 'ok', 'articles': nb_total}
+
+    except Exception as exc:
+        logger.error(f"[Task] news_gratuites — erreur : {exc}", exc_info=True)
+        raise self.retry(exc=exc)

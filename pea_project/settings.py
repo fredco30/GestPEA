@@ -185,6 +185,16 @@ CELERY_BEAT_SCHEDULE = {
         'task':     'app.tasks.digest_hebdomadaire_task',
         'schedule': crontab(hour=19, minute=0, day_of_week='5'),
     },
+
+    # --- News gratuites (RSS + Reddit) : 9h00 et 13h00 lun-ven ---
+    'news-gratuites-matin': {
+        'task':     'app.tasks.fetch_news_gratuites_task',
+        'schedule': crontab(hour=9, minute=0, day_of_week='1-5'),
+    },
+    'news-gratuites-midi': {
+        'task':     'app.tasks.fetch_news_gratuites_task',
+        'schedule': crontab(hour=13, minute=0, day_of_week='1-5'),
+    },
 }
 
 # ---------------------------------------------------------------------------

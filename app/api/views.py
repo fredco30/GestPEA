@@ -115,8 +115,8 @@ class TitreViewSet(ViewSet):
             titre_archive.statut = request.data.get('statut', 'surveillance')
             titre_archive.save(update_fields=['actif', 'statut'])
             logger.info(f"[API] Titre reactive : {ticker_resolu}")
-            from app.tasks import import_historique_task
-            import_historique_task.delay(ticker_resolu)
+            from app.tasks import analyse_complete_task
+            analyse_complete_task.delay(ticker_resolu)
             return Response(
                 TitreDetailSerializer(titre_archive).data,
                 status=status.HTTP_201_CREATED
@@ -152,9 +152,9 @@ class TitreViewSet(ViewSet):
             }
         )
 
-        # Declencer l'import historique OHLC en tache Celery
-        from app.tasks import import_historique_task
-        import_historique_task.delay(titre.ticker)
+        # Lancer l'analyse complete en tache Celery (import + indicateurs + news + sentiment)
+        from app.tasks import analyse_complete_task
+        analyse_complete_task.delay(titre.ticker)
 
         auto_filled = list(metadata.keys())
         logger.info(
