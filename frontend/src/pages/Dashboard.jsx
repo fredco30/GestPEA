@@ -258,9 +258,12 @@ export default function Dashboard() {
               <span style={{ flex: 1, height: 1, background: SB.cyan, opacity: 0.3 }} />
             </div>
 
-            <SidebarNavItem icon={ICONS.axo} label="Alertes Axo" actif={false} onClick={() => setOnglet('alertes')} />
-            <SidebarNavItem icon={ICONS.performance} label="Performance PEA" actif={false} onClick={() => {}} />
-            <SidebarNavItem icon={ICONS.news} label="Actualités" actif={false} onClick={() => {}} />
+            <SidebarNavItem icon={ICONS.axo} label="Alertes Axo" actif={onglet === 'alertes_ia'}
+              onClick={() => { setOnglet('alertes_ia'); setTickerActif(null) }} />
+            <SidebarNavItem icon={ICONS.performance} label="Performance PEA" actif={onglet === 'performance'}
+              onClick={() => { setOnglet('performance'); setTickerActif(null) }} />
+            <SidebarNavItem icon={ICONS.news} label="Actualités" actif={onglet === 'actualites'}
+              onClick={() => { setOnglet('actualites'); setTickerActif(null) }} />
 
             {/* === TITRES (selon onglet) === */}
             {onglet === 'portefeuille' && titresPf.length > 0 && (
@@ -318,6 +321,9 @@ export default function Dashboard() {
           </div>
         )}
         {onglet === 'alertes' && <PanneauAlertes />}
+        {onglet === 'alertes_ia' && <PanneauAlertesIA />}
+        {onglet === 'performance' && <PanneauPerformance titres={titresPf} dashboard={dashboard} />}
+        {onglet === 'actualites' && <PanneauActualites titres={[...titresPf, ...titresSv]} />}
       </main>
 
       <ChatIA ticker={tickerActif} />
@@ -633,6 +639,282 @@ function StatLigne({ label, valeur, couleur }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 0' }}>
       <span style={{ fontSize: 12, color: SB.textTertiary }}>{label}</span>
       <span style={{ fontSize: 13, fontWeight: 600, color: couleur || SB.textPrimary }}>{valeur}</span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Panneaux "Insights IA"
+// ---------------------------------------------------------------------------
+
+function PanneauAlertesIA() {
+  const [alertes, setAlertes] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { getAlertes } = await import('../api/client')
+        const data = await getAlertes({ limit: 30 })
+        // Filtrer les alertes qui contiennent des signaux IA (renforcement, pattern, sectorielle)
+        setAlertes(data)
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
+    }
+    load()
+  }, [])
+
+  if (loading) return <div style={{ color: 'var(--color-text-tertiary)', padding: 40, textAlign: 'center' }}>Chargement des alertes IA...</div>
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img src="/chatbot.png" alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+        Alertes Axo — Intelligence Artificielle
+      </h2>
+      {alertes.length === 0 && (
+        <div style={{ color: 'var(--color-text-tertiary)', padding: 20, fontSize: 14 }}>
+          Aucune alerte IA pour le moment. Les alertes apparaissent quand l'IA detecte des opportunites de renforcement, des patterns graphiques ou des evenements sectoriels.
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {alertes.map(a => (
+          <div key={a.id} style={{
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--border-radius-lg)',
+            padding: '14px 18px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-text-primary)' }}>
+                  {a.nom_court || a.ticker}
+                </span>
+                <span style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 12, fontWeight: 600,
+                  background: a.niveau === 'forte' ? 'var(--color-background-danger)' : a.niveau === 'moderee' ? 'var(--color-background-warning)' : 'var(--color-background-info)',
+                  color: a.niveau === 'forte' ? 'var(--color-text-danger)' : a.niveau === 'moderee' ? 'var(--color-text-warning)' : 'var(--color-text-info)',
+                }}>
+                  {a.score_confluence}/10
+                </span>
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+                {new Date(a.date_detection).toLocaleDateString('fr-FR')}
+              </span>
+            </div>
+            {a.texte_ia && (
+              <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+                {a.texte_ia}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PanneauPerformance({ titres, dashboard }) {
+  if (!titres || titres.length === 0) {
+    return (
+      <div style={{ color: 'var(--color-text-tertiary)', padding: 40, textAlign: 'center', fontSize: 14 }}>
+        Aucun titre en portefeuille.
+      </div>
+    )
+  }
+
+  const valeurTotale = dashboard?.valeur_totale_portefeuille ? Number(dashboard.valeur_totale_portefeuille) : 0
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>
+        Performance PEA
+      </h2>
+
+      {/* Résumé global */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20,
+      }}>
+        <CarteResume label="Valeur totale" valeur={`${valeurTotale.toLocaleString('fr-FR')} €`} />
+        <CarteResume
+          label="Variation jour"
+          valeur={dashboard?.variation_jour_portefeuille
+            ? `${Number(dashboard.variation_jour_portefeuille) >= 0 ? '+' : ''}${Number(dashboard.variation_jour_portefeuille).toLocaleString('fr-FR')} €`
+            : '—'}
+          couleur={Number(dashboard?.variation_jour_portefeuille) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
+        />
+        <CarteResume label="Titres en portefeuille" valeur={titres.length} />
+      </div>
+
+      {/* Tableau par titre */}
+      <div style={{
+        background: 'var(--color-background-primary)',
+        border: '0.5px solid var(--color-border-tertiary)',
+        borderRadius: 'var(--border-radius-lg)',
+        overflow: 'hidden',
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--color-border-tertiary)' }}>
+              {['Titre', 'Actions', 'PRU', 'Cours', 'Variation', 'Valeur', 'PV/MV', 'Conviction'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {titres.map(t => {
+              const cours = t.dernier_cours || 0
+              const nb = t.nb_actions || 0
+              const pru = t.prix_revient_moyen || 0
+              const valeur = nb * cours
+              const pmv = pru ? valeur - (nb * pru) : null
+              const pmvPct = pru && nb ? ((cours - pru) / pru * 100) : null
+
+              return (
+                <tr key={t.ticker} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+                  <td style={{ padding: '10px 12px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                    {t.nom_court || t.ticker}
+                  </td>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{nb.toLocaleString('fr-FR')}</td>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{pru ? `${Number(pru).toFixed(2)} €` : '—'}</td>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 500 }}>{cours ? `${Number(cours).toFixed(2)} €` : '—'}</td>
+                  <td style={{
+                    padding: '10px 12px', fontWeight: 500,
+                    color: (t.variation_jour || 0) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
+                  }}>
+                    {t.variation_jour != null ? `${t.variation_jour >= 0 ? '+' : ''}${t.variation_jour.toFixed(2)}%` : '—'}
+                  </td>
+                  <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{valeur ? `${valeur.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}</td>
+                  <td style={{
+                    padding: '10px 12px', fontWeight: 600,
+                    color: pmv != null ? (pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : 'var(--color-text-tertiary)',
+                  }}>
+                    {pmv != null ? `${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)` : '—'}
+                  </td>
+                  <td style={{ padding: '10px 12px' }}>
+                    {t.score_conviction != null ? (
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                        background: t.score_conviction >= 70 ? 'var(--color-background-success)' : t.score_conviction >= 40 ? 'var(--color-background-warning)' : 'var(--color-background-danger)',
+                        color: t.score_conviction >= 70 ? 'var(--color-text-success)' : t.score_conviction >= 40 ? 'var(--color-text-warning)' : 'var(--color-text-danger)',
+                      }}>
+                        {t.score_conviction}/100
+                      </span>
+                    ) : '—'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function CarteResume({ label, valeur, couleur }) {
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)',
+      padding: '16px 18px',
+    }}>
+      <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: couleur || 'var(--color-text-primary)' }}>{valeur}</div>
+    </div>
+  )
+}
+
+function PanneauActualites({ titres }) {
+  const [articles, setArticles] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        // Charger les articles de chaque titre et les fusionner
+        const { getTitreDetail } = await import('../api/client')
+        const all = []
+        for (const t of titres.slice(0, 10)) {
+          try {
+            const detail = await getTitreDetail(t.ticker)
+            if (detail.articles_recents) {
+              detail.articles_recents.forEach(a => {
+                a._ticker = t.ticker
+                a._nom = t.nom_court || t.ticker
+              })
+              all.push(...detail.articles_recents)
+            }
+          } catch (e) { /* skip */ }
+        }
+        // Trier par date
+        all.sort((a, b) => new Date(b.date_pub) - new Date(a.date_pub))
+        setArticles(all.slice(0, 30))
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
+    }
+    load()
+  }, [titres])
+
+  if (loading) return <div style={{ color: 'var(--color-text-tertiary)', padding: 40, textAlign: 'center' }}>Chargement des actualites...</div>
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>
+        Actualites — Toutes les sources
+      </h2>
+      {articles.length === 0 && (
+        <div style={{ color: 'var(--color-text-tertiary)', padding: 20, fontSize: 14 }}>Aucun article récent.</div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {articles.map((a, i) => (
+          <div key={`${a.url}-${i}`} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12,
+            background: 'var(--color-background-primary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--border-radius-md)',
+            padding: '12px 16px',
+          }}>
+            {/* Score sentiment */}
+            {a.score_sentiment != null && (
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 700,
+                background: a.score_sentiment >= 0.2 ? 'var(--color-background-success)' : a.score_sentiment <= -0.2 ? 'var(--color-background-danger)' : 'var(--color-background-warning)',
+                color: a.score_sentiment >= 0.2 ? 'var(--color-text-success)' : a.score_sentiment <= -0.2 ? 'var(--color-text-danger)' : 'var(--color-text-warning)',
+              }}>
+                {a.score_sentiment >= 0 ? '+' : ''}{a.score_sentiment.toFixed(2)}
+              </div>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 10,
+                  background: 'var(--color-background-secondary)', color: 'var(--color-text-tertiary)', fontWeight: 600,
+                }}>
+                  {a._nom}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                  {a.source} · {new Date(a.date_pub).toLocaleDateString('fr-FR')}
+                </span>
+              </div>
+              <a href={a.url} target="_blank" rel="noreferrer"
+                style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none', lineHeight: 1.4 }}>
+                {a.titre_art}
+              </a>
+              {a.extrait && (
+                <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, lineHeight: 1.5 }}>
+                  {a.extrait.substring(0, 200)}{a.extrait.length > 200 ? '...' : ''}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
