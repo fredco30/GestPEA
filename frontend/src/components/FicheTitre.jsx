@@ -15,7 +15,7 @@ export default function FicheTitre({ ticker }) {
   const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode, rafraichir } = useTitre(ticker)
   const [analyseEnCours, setAnalyseEnCours] = useState(false)
   const [analyseResultat, setAnalyseResultat] = useState(null)
-  const [docsRefreshKey, setDocsRefreshKey] = useState(0)
+  const [docsRefreshKey, setDocsRefreshKey] = useState(0)  // eslint-disable-line
 
   const lancerAnalyse = async () => {
     setAnalyseEnCours(true)
@@ -53,8 +53,6 @@ export default function FicheTitre({ ticker }) {
         onDocUploaded={() => setDocsRefreshKey(k => k + 1)}
       />
 
-      {/* ---- Documents ---- */}
-      <PanneauDocuments ticker={ticker} refreshKey={docsRefreshKey} />
 
       {/* ---- Resultat analyse IA ---- */}
       {analyseResultat && !analyseResultat.erreur && (
@@ -138,9 +136,16 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
   const [prixRevient, setPrixRevient]     = useState(titre.prix_revient_moyen || '')
   const [saving, setSaving]               = useState(false)
   const [showConviction, setShowConviction] = useState(false)
-  const [showDocUpload, setShowDocUpload] = useState(false)
+  const [showDocPanel, setShowDocPanel]   = useState(false)
+  const [docs, setDocs]                   = useState([])
   const [typeDoc, setTypeDoc]             = useState('autre')
   const [uploading, setUploading]         = useState(false)
+
+  const chargerDocs = useCallback(async () => {
+    try { setDocs(await getDocuments(ticker)) } catch (e) { console.error(e) }
+  }, [ticker])
+
+  useEffect(() => { chargerDocs() }, [chargerDocs])
 
   const nb           = Number(titre.nb_actions) || 0
   const prm          = Number(titre.prix_revient_moyen) || 0
@@ -172,8 +177,8 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
       fd.append('nom', fichier.name)
       fd.append('type_doc', typeDoc)
       await uploadDocument(ticker, fd)
-      setShowDocUpload(false)
       setTypeDoc('autre')
+      await chargerDocs()
       onDocUploaded()
     } catch (err) {
       alert('Erreur upload : ' + (err.message || 'inconnue'))
@@ -240,19 +245,19 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           <BadgeSentiment score={Number(sentimentGlobal.score)} label={sentimentGlobal.label} />
         )}
 
-        {/* Upload doc */}
+        {/* Docs */}
         <button
-          onClick={() => setShowDocUpload(v => !v)}
-          title="Ajouter un document (PDF, Word, Excel…)"
+          onClick={() => setShowDocPanel(v => !v)}
+          title="Documents du titre"
           style={{
             padding: '5px 10px', fontSize: 11, fontWeight: 500,
-            background: showDocUpload ? 'var(--color-background-secondary)' : 'var(--color-background-secondary)',
-            border: `0.5px solid ${showDocUpload ? 'var(--color-text-tertiary)' : 'var(--color-border-tertiary)'}`,
+            background: 'var(--color-background-secondary)',
+            border: `0.5px solid ${showDocPanel ? 'var(--color-text-tertiary)' : 'var(--color-border-tertiary)'}`,
             borderRadius: 'var(--border-radius-md)',
             cursor: 'pointer', color: 'var(--color-text-secondary)',
           }}
         >
-          📎 Doc
+          📎 Doc {docs.length > 0 && <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>({docs.length})</span>}
         </button>
 
         {/* Analyser IA */}
@@ -393,35 +398,51 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
         </div>
       )}
 
-      {/* === Upload document inline === */}
-      {showDocUpload && (
-        <div style={{
-          display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
-          marginTop: 10, padding: '10px 12px',
-          background: 'var(--color-background-secondary)',
-          borderRadius: 'var(--border-radius-md)',
-        }}>
-          <select
-            value={typeDoc}
-            onChange={e => setTypeDoc(e.target.value)}
-            style={{ fontSize: 11, padding: '4px 8px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-tertiary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}
-          >
-            {TYPE_DOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <input
-            type="file"
-            accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.txt,.csv"
-            onChange={handleUploadDoc}
-            disabled={uploading}
-            style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}
-          />
-          {uploading && <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Upload et analyse en cours...</span>}
-          <button
-            onClick={() => { setShowDocUpload(false); setTypeDoc('autre') }}
-            style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)' }}
-          >
-            Annuler
-          </button>
+      {/* === Panel documents (liste + upload) === */}
+      {showDocPanel && (
+        <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)' }}>
+
+          {/* Liste des docs */}
+          {docs.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 10 }}>Aucun document ajouté.</div>
+          )}
+          {docs.map(doc => (
+            <div key={doc.id} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+              <div>
+                <a href={doc.url_fichier} target="_blank" rel="noreferrer"
+                  style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none' }}>
+                  {doc.nom}
+                </a>
+                <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 10, background: 'var(--color-background-primary)', color: 'var(--color-text-tertiary)' }}>
+                  {doc.type_doc_display}
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 6 }}>
+                  {new Date(doc.date_upload).toLocaleDateString('fr-FR')}
+                </span>
+                {doc.resume_ia && (
+                  <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--color-text-secondary)', marginTop: 3, maxWidth: 420 }}>
+                    {doc.resume_ia}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={async () => { if (window.confirm(`Supprimer "${doc.nom}" ?`)) { await deleteDocument(ticker, doc.id); chargerDocs() } }}
+                style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-danger)', padding: '0 4px', flexShrink: 0 }}
+              >✕</button>
+            </div>
+          ))}
+
+          {/* Formulaire ajout */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <select value={typeDoc} onChange={e => setTypeDoc(e.target.value)}
+              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-tertiary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}>
+              {TYPE_DOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <input type="file" accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.txt,.csv"
+              onChange={handleUploadDoc} disabled={uploading}
+              style={{ fontSize: 11, color: 'var(--color-text-secondary)' }} />
+            {uploading && <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Analyse en cours...</span>}
+          </div>
         </div>
       )}
 
@@ -559,10 +580,6 @@ function CarteFondamentaux({ fond }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Documents
-// ---------------------------------------------------------------------------
-
 const TYPE_DOC_OPTIONS = [
   { value: 'rapport_annuel', label: 'Rapport annuel' },
   { value: 'etude_clinique', label: 'Etude clinique' },
@@ -570,82 +587,6 @@ const TYPE_DOC_OPTIONS = [
   { value: 'analyse', label: 'Analyse / Note' },
   { value: 'autre', label: 'Autre' },
 ]
-
-function PanneauDocuments({ ticker, refreshKey }) {
-  const [docs, setDocs] = useState([])
-  const [ouvert, setOuvert] = useState(false)
-
-  const chargerDocs = useCallback(async () => {
-    try {
-      const data = await getDocuments(ticker)
-      setDocs(data)
-    } catch (e) { console.error('[Docs] Erreur chargement:', e) }
-  }, [ticker])
-
-  useEffect(() => { chargerDocs() }, [chargerDocs, refreshKey])
-
-  const handleDelete = async (docId, nom) => {
-    if (!window.confirm(`Supprimer "${nom}" ?`)) return
-    try {
-      await deleteDocument(ticker, docId)
-      await chargerDocs()
-    } catch (e) { console.error('[Docs] Erreur suppression:', e) }
-  }
-
-  return (
-    <div style={{ background: 'var(--color-background-primary)', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-lg)', padding: '12px 16px' }}>
-      <button
-        onClick={() => setOuvert(o => !o)}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-          Documents ({docs.length})
-        </span>
-        <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{ouvert ? '▲' : '▼'}</span>
-      </button>
-
-      {ouvert && (
-        <div style={{ marginTop: 10 }}>
-          {docs.length === 0 && (
-            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-              Aucun document — utilisez le bouton 📎 Doc en haut de la fiche pour en ajouter.
-            </div>
-          )}
-          {docs.map(doc => (
-            <div key={doc.id} style={{ padding: '8px 0', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <a href={doc.url_fichier} target="_blank" rel="noreferrer"
-                    style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none' }}
-                  >
-                    {doc.nom}
-                  </a>
-                  <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 10, background: 'var(--color-background-secondary)', color: 'var(--color-text-tertiary)' }}>
-                    {doc.type_doc_display}
-                  </span>
-                  <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
-                    {new Date(doc.date_upload).toLocaleDateString('fr-FR')}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleDelete(doc.id, doc.nom)}
-                  style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-danger)', padding: '2px 6px' }}
-                >
-                  ✕
-                </button>
-              </div>
-              {doc.resume_ia && (
-                <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                  {doc.resume_ia}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Helpers couleur
