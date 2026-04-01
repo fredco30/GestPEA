@@ -293,7 +293,7 @@ class TitreViewSet(ViewSet):
         POST /api/titres/{ticker}/analyser/
         Lance l'analyse complete IA d'un titre (synchrone) :
           1. Calcul des indicateurs techniques
-          2. Collecte des news (NewsAPI)
+          2. Collecte des news (NewsAPI + Google News + Boursorama + Zonebourse + Reddit)
           3. Scoring sentiment des articles (Mistral)
           4. Generation du sentiment mixte (technique + presse + rapport IA)
         Retourne le resultat complet de l'analyse.
@@ -325,6 +325,29 @@ class TitreViewSet(ViewSet):
                 resultats['etapes']['newsapi'] = 'Cle NewsAPI non configuree'
         except Exception as e:
             resultats['etapes']['newsapi'] = f'Erreur : {e}'
+
+        # 2b. RSS (Google News + Boursorama + Zonebourse) — historique 1 an si premier lancement
+        try:
+            from app.services.rss_news import RSSCollector
+            rss = RSSCollector()
+            # Historique si le titre a moins de 10 articles
+            nb_articles_existants = Article.objects.filter(titre=titre).count()
+            historique = nb_articles_existants < 10
+            rss_result = rss.import_all_sources([titre.ticker], historique=historique)
+            resultats['etapes']['rss'] = {k: f'{v} articles' for k, v in rss_result.items()}
+        except Exception as e:
+            resultats['etapes']['rss'] = f'Erreur : {e}'
+
+        # 2c. Reddit (r/bourse, r/vosfinances)
+        try:
+            from app.services.reddit_client import RedditCollector
+            reddit = RedditCollector()
+            nb_articles_existants = Article.objects.filter(titre=titre, source='reddit').count()
+            historique = nb_articles_existants < 5
+            nb_reddit = reddit.import_reddit_posts([titre.ticker], historique=historique)
+            resultats['etapes']['reddit'] = f'{nb_reddit} posts importes'
+        except Exception as e:
+            resultats['etapes']['reddit'] = f'Erreur : {e}'
 
         # 3. Scoring sentiment articles
         nb_scores = 0

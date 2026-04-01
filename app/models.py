@@ -340,16 +340,19 @@ class Article(models.Model):
     """
 
     SOURCE_CHOICES = [
-        ('newsapi',    'NewsAPI'),
-        ('eodhd',      'EODHD News'),
-        ('reddit',     'Reddit'),
-        ('stocktwits', 'StockTwits'),
+        ('newsapi',      'NewsAPI'),
+        ('eodhd',        'EODHD News'),
+        ('google_news',  'Google News'),
+        ('boursorama',   'Boursorama'),
+        ('zonebourse',   'Zonebourse'),
+        ('reddit',       'Reddit'),
+        ('stocktwits',   'StockTwits'),
     ]
 
     titre      = models.ForeignKey(Titre, on_delete=models.CASCADE,
                                     related_name='articles')
     date_pub   = models.DateTimeField()
-    source     = models.CharField(max_length=15, choices=SOURCE_CHOICES)
+    source     = models.CharField(max_length=20, choices=SOURCE_CHOICES)
     url        = models.URLField(max_length=500, blank=True)
     titre_art  = models.CharField(max_length=300)
     extrait    = models.TextField(blank=True)

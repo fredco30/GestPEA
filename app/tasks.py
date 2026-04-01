@@ -195,6 +195,27 @@ def fetch_news_task(self):
             except Exception as e:
                 logger.error(f"[Task] fetch_news NewsAPI — erreur : {e}")
 
+        # --- Source 3 : RSS (Google News + Boursorama + Zonebourse) ---
+        try:
+            from app.services.rss_news import RSSCollector
+            rss = RSSCollector()
+            rss_result = rss.import_all_sources(tickers, historique=False)
+            nb_rss = sum(rss_result.values())
+            nb_total += nb_rss
+            logger.info(f"[Task] fetch_news RSS : {nb_rss} articles — {rss_result}")
+        except Exception as e:
+            logger.error(f"[Task] fetch_news RSS — erreur : {e}")
+
+        # --- Source 4 : Reddit (r/bourse, r/vosfinances) ---
+        try:
+            from app.services.reddit_client import RedditCollector
+            reddit = RedditCollector()
+            nb_reddit = reddit.import_reddit_posts(tickers, historique=False)
+            nb_total += nb_reddit
+            logger.info(f"[Task] fetch_news Reddit : {nb_reddit} posts créés")
+        except Exception as e:
+            logger.error(f"[Task] fetch_news Reddit — erreur : {e}")
+
         # Déclencher le scoring LLM sur les articles non scorés
         if nb_total > 0:
             article_ids = list(
