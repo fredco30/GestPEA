@@ -690,7 +690,7 @@ SCORE DE CONFLUENCE : {alerte.score_confluence}/10
 NIVEAU : {alerte.niveau}
 
 SIGNAUX DÉTECTÉS :
-{json.dumps(signaux, ensure_ascii=False, indent=2)}
+{json.dumps(signaux, ensure_ascii=False, indent=2, default=str)}
 
 FONDAMENTAUX :
 {json.dumps({k: str(v) if v is not None else 'N/D' for k, v in fond_ctx.items()}, ensure_ascii=False, indent=2)}
