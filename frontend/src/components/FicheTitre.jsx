@@ -15,6 +15,7 @@ export default function FicheTitre({ ticker }) {
   const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode, rafraichir } = useTitre(ticker)
   const [analyseEnCours, setAnalyseEnCours] = useState(false)
   const [analyseResultat, setAnalyseResultat] = useState(null)
+  const [docsRefreshKey, setDocsRefreshKey] = useState(0)
 
   const lancerAnalyse = async () => {
     setAnalyseEnCours(true)
@@ -22,7 +23,6 @@ export default function FicheTitre({ ticker }) {
     try {
       const result = await analyserTitre(ticker)
       setAnalyseResultat(result)
-      // Rafraichir les donnees du titre apres analyse
       rafraichir()
     } catch (e) {
       setAnalyseResultat({ erreur: e.message })
@@ -34,90 +34,24 @@ export default function FicheTitre({ ticker }) {
   if (loading) return <Squelette />
   if (!titre)  return <div style={{ color: 'var(--color-text-tertiary)', padding: 24 }}>Titre introuvable.</div>
 
-  const dernier        = titre.prix_historique?.[titre.prix_historique.length - 1]
+  const dernier         = titre.prix_historique?.[titre.prix_historique.length - 1]
   const sentimentGlobal = titre.sentiments_30j?.[titre.sentiments_30j.length - 1]
-  const fond           = titre.fondamentaux
+  const fond            = titre.fondamentaux
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* ---- En-tête ---- */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-              {titre.nom_court || titre.nom}
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
-              {titre.ticker} · {titre.place} · {titre.secteur}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 6 }}>
-            <span style={{ fontSize: 28, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-              {dernier ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €` : '—'}
-            </span>
-            {dernier?.variation_pct != null && (
-              <span style={{
-                fontSize: 14, fontWeight: 500,
-                color: dernier.variation_pct >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
-              }}>
-                {dernier.variation_pct >= 0 ? '+' : ''}{dernier.variation_pct.toFixed(2)}%
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button
-            onClick={lancerAnalyse}
-            disabled={analyseEnCours}
-            style={{
-              padding: '6px 14px', fontSize: 12, fontWeight: 500,
-              background: analyseEnCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
-              color: analyseEnCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
-              border: 'none', borderRadius: 'var(--border-radius-md)',
-              cursor: analyseEnCours ? 'wait' : 'pointer',
-            }}
-          >
-            {analyseEnCours ? 'Analyse en cours...' : 'Analyser IA'}
-          </button>
-          {sentimentGlobal && <BadgeSentiment score={Number(sentimentGlobal.score)} label={sentimentGlobal.label} />}
-          <PositionBadge titre={titre} dernier={dernier} />
-        </div>
-      </div>
-
-      {/* ---- Métriques clés ---- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
-        <MetriqueCard label="RSI (14)" valeur={dernier?.rsi_14 ? Number(dernier.rsi_14).toFixed(1) : '—'}
-          couleur={getRsiCouleur(dernier?.rsi_14)} />
-        <MetriqueCard label="MACD" valeur={dernier?.macd_hist != null
-          ? `${Number(dernier.macd_hist) >= 0 ? '+' : ''}${Number(dernier.macd_hist).toFixed(2)}` : '—'}
-          couleur={dernier?.macd_hist != null ? (Number(dernier.macd_hist) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : undefined} />
-        <MetriqueCard label="MM 50j vs prix" valeur={
-          dernier?.mm_50 && dernier?.cloture
-            ? `${((Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100).toFixed(1)}%`
-            : '—'}
-          couleur={getEcartMmCouleur(dernier)} />
-        <MetriqueCard label="Sentiment" valeur={
-          sentimentGlobal ? (Number(sentimentGlobal.score) >= 0 ? '+' : '') + Number(sentimentGlobal.score).toFixed(2) : '—'}
-          couleur={sentimentGlobal?.couleur === 'success' ? 'var(--color-text-success)'
-            : sentimentGlobal?.couleur === 'danger' ? 'var(--color-text-danger)'
-            : 'var(--color-text-warning)'} />
-      </div>
-
-      {/* ---- Score de conviction IA ---- */}
-      {titre.score_conviction != null && (
-        <CarteConviction
-          score={titre.score_conviction}
-          explication={titre.explication_conviction}
-          dateCalcul={titre.date_calcul_conviction}
-        />
-      )}
-
-      {/* ---- Position portefeuille (éditable) ---- */}
-      {titre.statut === 'portefeuille' && (
-        <PanneauPosition titre={titre} ticker={ticker} onUpdate={rafraichir} />
-      )}
+      {/* ---- En-tête compact 2 lignes ---- */}
+      <EnTeteCompact
+        titre={titre}
+        ticker={ticker}
+        dernier={dernier}
+        sentimentGlobal={sentimentGlobal}
+        analyseEnCours={analyseEnCours}
+        onAnalyse={lancerAnalyse}
+        onRefresh={rafraichir}
+        onDocUploaded={() => setDocsRefreshKey(k => k + 1)}
+      />
 
       {/* ---- Resultat analyse IA ---- */}
       {analyseResultat && !analyseResultat.erreur && (
@@ -170,16 +104,12 @@ export default function FicheTitre({ ticker }) {
 
       {/* ---- Grille inférieure : sentiment + news ---- */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
-
-        {/* Signaux techniques + sentiment */}
         <CarteSignaux
           signaux={titre.signaux_actifs}
           sentiments30j={titre.sentiments_30j}
           fondamentaux={fond}
           ticker={ticker}
         />
-
-        {/* Feed articles */}
         <FeedArticles articles={titre.articles_recents} />
       </div>
 
@@ -192,73 +122,375 @@ export default function FicheTitre({ ticker }) {
       {fond && <CarteFondamentaux fond={fond} />}
 
       {/* ---- Documents ---- */}
-      <PanneauDocuments ticker={ticker} />
+      <PanneauDocuments ticker={ticker} refreshKey={docsRefreshKey} />
 
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Sous-composants
+// En-tête compact — 2 lignes
 // ---------------------------------------------------------------------------
 
-function CarteConviction({ score, explication, dateCalcul }) {
-  const couleur = score >= 70 ? 'success' : score >= 40 ? 'warning' : 'danger'
-  const label = score >= 70 ? 'Conviction forte' : score >= 40 ? 'Conviction moderee' : 'Conviction faible'
-  const pct = score / 100
+function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours, onAnalyse, onRefresh, onDocUploaded }) {
+  const [editPos, setEditPos]             = useState(false)
+  const [nbActions, setNbActions]         = useState(titre.nb_actions || '')
+  const [prixRevient, setPrixRevient]     = useState(titre.prix_revient_moyen || '')
+  const [saving, setSaving]               = useState(false)
+  const [showConviction, setShowConviction] = useState(false)
+  const [showDocUpload, setShowDocUpload] = useState(false)
+  const [typeDoc, setTypeDoc]             = useState('autre')
+  const [uploading, setUploading]         = useState(false)
+
+  const nb           = Number(titre.nb_actions) || 0
+  const prm          = Number(titre.prix_revient_moyen) || 0
+  const coursActuel  = dernier ? Number(dernier.cloture) : null
+  const valeurPos    = nb && coursActuel ? nb * coursActuel : null
+  const investi      = nb && prm ? nb * prm : null
+  const pmv          = valeurPos && investi ? valeurPos - investi : null
+  const pmvPct       = investi ? ((valeurPos - investi) / investi * 100) : null
+
+  const handleSavePos = async () => {
+    setSaving(true)
+    try {
+      await updateTitre(ticker, {
+        nb_actions: Number(nbActions) || 0,
+        prix_revient_moyen: Number(prixRevient) || null,
+      })
+      setEditPos(false)
+      onRefresh()
+    } catch (e) { console.error(e) } finally { setSaving(false) }
+  }
+
+  const handleUploadDoc = async (e) => {
+    const fichier = e.target.files[0]
+    if (!fichier) return
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('fichier', fichier)
+      fd.append('nom', fichier.name)
+      fd.append('type_doc', typeDoc)
+      await uploadDocument(ticker, fd)
+      setShowDocUpload(false)
+      setTypeDoc('autre')
+      onDocUploaded()
+    } catch (err) {
+      alert('Erreur upload : ' + (err.message || 'inconnue'))
+    } finally { setUploading(false) }
+  }
 
   return (
     <div style={{
       background: 'var(--color-background-primary)',
       border: '0.5px solid var(--color-border-tertiary)',
       borderRadius: 'var(--border-radius-lg)',
-      padding: '14px 16px',
+      padding: '12px 16px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Jauge circulaire */}
-        <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
-          <svg width="56" height="56" viewBox="0 0 56 56">
-            <circle cx="28" cy="28" r="24" fill="none" stroke="var(--color-background-secondary)" strokeWidth="4" />
-            <circle cx="28" cy="28" r="24" fill="none"
-              stroke={`var(--color-text-${couleur})`} strokeWidth="4"
-              strokeDasharray={`${pct * 150.8} 150.8`}
-              strokeLinecap="round"
-              transform="rotate(-90 28 28)" />
-          </svg>
-          <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16, fontWeight: 600, color: `var(--color-text-${couleur})`,
-          }}>
-            {score}
-          </div>
+
+      {/* === LIGNE 1 : identité · cours · conviction · actions === */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+
+        {/* Identité */}
+        <div style={{ lineHeight: 1.25 }}>
+          <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            {titre.nom_court || titre.nom}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
+            {titre.ticker}
+            {titre.place   ? ` · ${titre.place}`  : ''}
+            {titre.secteur ? ` · ${titre.secteur}` : ''}
+          </span>
         </div>
 
-        {/* Texte */}
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
-              Score de conviction IA
-            </span>
+        <div style={{ width: 1, height: 28, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
+
+        {/* Cours + variation */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            {dernier
+              ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
+              : '—'}
+          </span>
+          {dernier?.variation_pct != null && (
             <span style={{
-              fontSize: 10, padding: '2px 8px', borderRadius: 12, fontWeight: 500,
-              background: `var(--color-background-${couleur})`,
-              color: `var(--color-text-${couleur})`,
+              fontSize: 13, fontWeight: 500,
+              color: dernier.variation_pct >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
             }}>
-              {label}
+              {dernier.variation_pct >= 0 ? '+' : ''}{dernier.variation_pct.toFixed(2)}%
             </span>
-          </div>
-          {explication && (
-            <div style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--color-text-secondary)' }}>
-              {explication}
-            </div>
           )}
-          {dateCalcul && (
+        </div>
+
+        {/* Mini jauge conviction (cliquable) */}
+        {titre.score_conviction != null && (
+          <button
+            onClick={() => setShowConviction(v => !v)}
+            title="Score de conviction IA — cliquer pour le détail"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            <MiniGauge score={titre.score_conviction} />
+          </button>
+        )}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Sentiment */}
+        {sentimentGlobal && (
+          <BadgeSentiment score={Number(sentimentGlobal.score)} label={sentimentGlobal.label} />
+        )}
+
+        {/* Upload doc */}
+        <button
+          onClick={() => setShowDocUpload(v => !v)}
+          title="Ajouter un document (PDF, Word, Excel…)"
+          style={{
+            padding: '5px 10px', fontSize: 11, fontWeight: 500,
+            background: showDocUpload ? 'var(--color-background-secondary)' : 'var(--color-background-secondary)',
+            border: `0.5px solid ${showDocUpload ? 'var(--color-text-tertiary)' : 'var(--color-border-tertiary)'}`,
+            borderRadius: 'var(--border-radius-md)',
+            cursor: 'pointer', color: 'var(--color-text-secondary)',
+          }}
+        >
+          📎 Doc
+        </button>
+
+        {/* Analyser IA */}
+        <button
+          onClick={onAnalyse}
+          disabled={analyseEnCours}
+          style={{
+            padding: '5px 12px', fontSize: 12, fontWeight: 500,
+            background: analyseEnCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
+            color: analyseEnCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
+            border: 'none', borderRadius: 'var(--border-radius-md)',
+            cursor: analyseEnCours ? 'wait' : 'pointer',
+          }}
+        >
+          {analyseEnCours ? '⏳ Analyse...' : '✦ Analyser IA'}
+        </button>
+      </div>
+
+      {/* === LIGNE 2 : pills indicateurs + position === */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+
+        <PillMetrique
+          label="RSI"
+          valeur={dernier?.rsi_14 ? Number(dernier.rsi_14).toFixed(1) : '—'}
+          couleur={getRsiCouleur(dernier?.rsi_14)}
+        />
+        <PillMetrique
+          label="MACD"
+          valeur={dernier?.macd_hist != null
+            ? `${Number(dernier.macd_hist) >= 0 ? '+' : ''}${Number(dernier.macd_hist).toFixed(2)}`
+            : '—'}
+          couleur={dernier?.macd_hist != null
+            ? (Number(dernier.macd_hist) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)')
+            : undefined}
+        />
+        <PillMetrique
+          label="MM50 vs prix"
+          valeur={dernier?.mm_50 && dernier?.cloture
+            ? `${((Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100).toFixed(1)}%`
+            : '—'}
+          couleur={getEcartMmCouleur(dernier)}
+        />
+        <PillMetrique
+          label="Sent."
+          valeur={sentimentGlobal
+            ? `${Number(sentimentGlobal.score) >= 0 ? '+' : ''}${Number(sentimentGlobal.score).toFixed(2)}`
+            : '—'}
+          couleur={sentimentGlobal?.couleur === 'success' ? 'var(--color-text-success)'
+            : sentimentGlobal?.couleur === 'danger' ? 'var(--color-text-danger)'
+            : 'var(--color-text-warning)'}
+        />
+
+        {/* Position portefeuille */}
+        {titre.statut === 'portefeuille' && nb > 0 && !editPos && (
+          <>
+            <div style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
+            <PillMetrique label="Actions" valeur={nb.toLocaleString('fr-FR')} />
+            <PillMetrique label="PRU" valeur={prm ? `${prm.toFixed(2)} €` : '—'} />
+            <PillMetrique
+              label="Valeur"
+              valeur={valeurPos ? `${valeurPos.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}
+            />
+            {pmv != null && (
+              <PillMetrique
+                label="PV/MV"
+                valeur={`${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)`}
+                couleur={pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
+              />
+            )}
+            <button
+              onClick={() => { setEditPos(true); setNbActions(titre.nb_actions || ''); setPrixRevient(titre.prix_revient_moyen || '') }}
+              title="Modifier ma position"
+              style={{ fontSize: 12, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)', padding: '2px 4px', lineHeight: 1 }}
+            >
+              ✏️
+            </button>
+          </>
+        )}
+        {titre.statut === 'portefeuille' && !nb && !editPos && (
+          <>
+            <div style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
+            <button
+              onClick={() => setEditPos(true)}
+              style={{
+                fontSize: 11, padding: '3px 10px',
+                background: 'none',
+                border: '1px dashed var(--color-border-tertiary)',
+                borderRadius: 'var(--border-radius-md)',
+                cursor: 'pointer', color: 'var(--color-text-tertiary)',
+              }}
+            >
+              + Saisir ma position
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* === Formulaire edition position === */}
+      {editPos && (
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap',
+          marginTop: 10, padding: '10px 12px',
+          background: 'var(--color-background-secondary)',
+          borderRadius: 'var(--border-radius-md)',
+        }}>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Nb actions</label>
+            <input
+              type="number"
+              value={nbActions}
+              onChange={e => setNbActions(e.target.value)}
+              style={{ width: 90, padding: '5px 8px', fontSize: 12, border: '1px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-sm)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Prix revient moyen</label>
+            <input
+              type="number"
+              step="0.01"
+              value={prixRevient}
+              onChange={e => setPrixRevient(e.target.value)}
+              style={{ width: 110, padding: '5px 8px', fontSize: 12, border: '1px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-sm)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}
+            />
+          </div>
+          <button
+            onClick={handleSavePos}
+            disabled={saving}
+            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 500, background: 'var(--color-text-success)', color: '#fff', border: 'none', borderRadius: 'var(--border-radius-sm)', cursor: 'pointer' }}
+          >
+            {saving ? '...' : 'Enregistrer'}
+          </button>
+          <button
+            onClick={() => setEditPos(false)}
+            style={{ padding: '5px 10px', fontSize: 11, background: 'none', border: '1px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-sm)', cursor: 'pointer', color: 'var(--color-text-secondary)' }}
+          >
+            Annuler
+          </button>
+        </div>
+      )}
+
+      {/* === Upload document inline === */}
+      {showDocUpload && (
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+          marginTop: 10, padding: '10px 12px',
+          background: 'var(--color-background-secondary)',
+          borderRadius: 'var(--border-radius-md)',
+        }}>
+          <select
+            value={typeDoc}
+            onChange={e => setTypeDoc(e.target.value)}
+            style={{ fontSize: 11, padding: '4px 8px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-tertiary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}
+          >
+            {TYPE_DOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <input
+            type="file"
+            accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.txt,.csv"
+            onChange={handleUploadDoc}
+            disabled={uploading}
+            style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}
+          />
+          {uploading && <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Upload et analyse en cours...</span>}
+          <button
+            onClick={() => { setShowDocUpload(false); setTypeDoc('autre') }}
+            style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)' }}
+          >
+            Annuler
+          </button>
+        </div>
+      )}
+
+      {/* === Détail conviction IA (dépliable via clic sur jauge) === */}
+      {showConviction && titre.explication_conviction && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px',
+          background: 'var(--color-background-secondary)',
+          borderRadius: 'var(--border-radius-md)',
+          fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--color-text-tertiary)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Score de conviction IA
+          </div>
+          {titre.explication_conviction}
+          {titre.date_calcul_conviction && (
             <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-              Mis a jour le {new Date(dateCalcul).toLocaleDateString('fr-FR')}
+              Mis à jour le {new Date(titre.date_calcul_conviction).toLocaleDateString('fr-FR')}
             </div>
           )}
         </div>
+      )}
+
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Sous-composants utilitaires
+// ---------------------------------------------------------------------------
+
+function PillMetrique({ label, valeur, couleur }) {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 9px',
+      background: 'var(--color-background-secondary)',
+      borderRadius: 20,
+      fontSize: 11,
+      whiteSpace: 'nowrap',
+    }}>
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{label}</span>
+      <span style={{ fontWeight: 600, color: couleur || 'var(--color-text-primary)' }}>{valeur}</span>
+    </div>
+  )
+}
+
+function MiniGauge({ score }) {
+  const couleur = score >= 70 ? 'success' : score >= 40 ? 'warning' : 'danger'
+  const pct = score / 100
+  // Circonférence d'un cercle r=14 : 2π×14 ≈ 87.96
+  return (
+    <div style={{ position: 'relative', width: 36, height: 36 }} title={`Conviction : ${score}/100`}>
+      <svg width="36" height="36" viewBox="0 0 36 36">
+        <circle cx="18" cy="18" r="14" fill="none" stroke="var(--color-background-secondary)" strokeWidth="3" />
+        <circle
+          cx="18" cy="18" r="14" fill="none"
+          stroke={`var(--color-text-${couleur})`} strokeWidth="3"
+          strokeDasharray={`${pct * 87.96} 87.96`}
+          strokeLinecap="round"
+          transform="rotate(-90 18 18)"
+        />
+      </svg>
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 700, color: `var(--color-text-${couleur})`,
+      }}>
+        {score}
       </div>
     </div>
   )
@@ -269,23 +501,6 @@ function MetriqueCard({ label, valeur, couleur }) {
     <div style={{ background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)', padding: '10px 12px' }}>
       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 500, color: couleur || 'var(--color-text-primary)' }}>{valeur}</div>
-    </div>
-  )
-}
-
-function PositionBadge({ titre, dernier }) {
-  if (!titre.nb_actions || titre.nb_actions === 0) return null
-  const valeur = titre.valeur_position
-  const pmv    = titre.plus_moins_value
-  return (
-    <div style={{ textAlign: 'right' }}>
-      <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{titre.nb_actions} actions</div>
-      {valeur && <div style={{ fontSize: 13, fontWeight: 500 }}>{Number(valeur).toLocaleString('fr-FR')} €</div>}
-      {pmv != null && (
-        <div style={{ fontSize: 12, color: Number(pmv) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
-          {Number(pmv) >= 0 ? '+' : ''}{Number(pmv).toLocaleString('fr-FR')} €
-        </div>
-      )}
     </div>
   )
 }
@@ -344,160 +559,9 @@ function CarteFondamentaux({ fond }) {
   )
 }
 
-function PanneauPosition({ titre, ticker, onUpdate }) {
-  const [edition, setEdition] = useState(false)
-  const [nbActions, setNbActions] = useState(titre.nb_actions || '')
-  const [prixRevient, setPrixRevient] = useState(titre.prix_revient_moyen || '')
-  const [saving, setSaving] = useState(false)
-
-  const dernier = titre.prix_historique?.[titre.prix_historique.length - 1]
-  const coursActuel = dernier ? Number(dernier.cloture) : null
-  const nb = Number(titre.nb_actions) || 0
-  const prm = Number(titre.prix_revient_moyen) || 0
-
-  const valeurPosition = nb && coursActuel ? nb * coursActuel : null
-  const investiTotal = nb && prm ? nb * prm : null
-  const pmv = valeurPosition && investiTotal ? valeurPosition - investiTotal : null
-  const pmvPct = investiTotal ? ((valeurPosition - investiTotal) / investiTotal * 100) : null
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await updateTitre(ticker, {
-        nb_actions: Number(nbActions) || 0,
-        prix_revient_moyen: Number(prixRevient) || null,
-      })
-      setEdition(false)
-      onUpdate()
-    } catch (e) {
-      console.error('Erreur sauvegarde position:', e)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!edition && !nb) {
-    return (
-      <button
-        onClick={() => setEdition(true)}
-        style={{
-          width: '100%', padding: '10px 14px',
-          background: 'var(--color-background-secondary)',
-          border: '1px dashed var(--color-border-tertiary)',
-          borderRadius: 'var(--border-radius-md)',
-          cursor: 'pointer', fontSize: 12, color: 'var(--color-text-secondary)',
-          textAlign: 'center',
-        }}
-      >
-        + Renseigner ma position (nb actions, prix d'achat)
-      </button>
-    )
-  }
-
-  return (
-    <div style={{
-      background: 'var(--color-background-primary)',
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: 'var(--border-radius-lg)', padding: '12px 16px',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: edition ? 10 : 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Ma position</span>
-        {!edition && (
-          <button
-            onClick={() => { setEdition(true); setNbActions(titre.nb_actions || ''); setPrixRevient(titre.prix_revient_moyen || '') }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-text-tertiary)' }}
-          >
-            Modifier
-          </button>
-        )}
-      </div>
-
-      {edition ? (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Nb actions</label>
-            <input
-              type="number"
-              value={nbActions}
-              onChange={e => setNbActions(e.target.value)}
-              style={{
-                width: 100, padding: '6px 8px', fontSize: 12,
-                border: '1px solid var(--color-border-tertiary)',
-                borderRadius: 'var(--border-radius-sm)',
-                background: 'var(--color-background-primary)',
-                color: 'var(--color-text-primary)',
-              }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Prix revient moyen</label>
-            <input
-              type="number"
-              step="0.01"
-              value={prixRevient}
-              onChange={e => setPrixRevient(e.target.value)}
-              style={{
-                width: 120, padding: '6px 8px', fontSize: 12,
-                border: '1px solid var(--color-border-tertiary)',
-                borderRadius: 'var(--border-radius-sm)',
-                background: 'var(--color-background-primary)',
-                color: 'var(--color-text-primary)',
-              }}
-            />
-          </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '6px 14px', fontSize: 11, fontWeight: 500,
-              background: 'var(--color-text-success)', color: '#fff',
-              border: 'none', borderRadius: 'var(--border-radius-sm)',
-              cursor: 'pointer',
-            }}
-          >
-            {saving ? '...' : 'Enregistrer'}
-          </button>
-          <button
-            onClick={() => setEdition(false)}
-            style={{
-              padding: '6px 10px', fontSize: 11,
-              background: 'none', border: '1px solid var(--color-border-tertiary)',
-              borderRadius: 'var(--border-radius-sm)',
-              cursor: 'pointer', color: 'var(--color-text-secondary)',
-            }}
-          >
-            Annuler
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8, marginTop: 8 }}>
-          <MetriqueCard label="Nb actions" valeur={nb.toLocaleString('fr-FR')} />
-          <MetriqueCard label="PRU" valeur={prm ? `${prm.toFixed(2)} \u20AC` : '\u2014'} />
-          <MetriqueCard label="Valeur position" valeur={valeurPosition ? `${valeurPosition.toLocaleString('fr-FR', {minimumFractionDigits: 2})} \u20AC` : '\u2014'} />
-          <MetriqueCard
-            label="Plus/moins value"
-            valeur={pmv != null ? `${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', {minimumFractionDigits: 2})} \u20AC (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)` : '\u2014'}
-            couleur={pmv != null ? (pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : undefined}
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Helpers couleur
-function getRsiCouleur(rsi) {
-  if (rsi == null) return 'var(--color-text-primary)'
-  if (rsi < 40) return 'var(--color-text-success)'
-  if (rsi > 65) return 'var(--color-text-danger)'
-  return 'var(--color-text-warning)'
-}
-
-function getEcartMmCouleur(dernier) {
-  if (!dernier?.mm_50 || !dernier?.cloture) return 'var(--color-text-primary)'
-  const ecart = (Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100
-  return ecart > 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'
-}
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
 
 const TYPE_DOC_OPTIONS = [
   { value: 'rapport_annuel', label: 'Rapport annuel' },
@@ -507,12 +571,9 @@ const TYPE_DOC_OPTIONS = [
   { value: 'autre', label: 'Autre' },
 ]
 
-function PanneauDocuments({ ticker }) {
+function PanneauDocuments({ ticker, refreshKey }) {
   const [docs, setDocs] = useState([])
   const [ouvert, setOuvert] = useState(false)
-  const [ajout, setAjout] = useState(false)
-  const [typeDoc, setTypeDoc] = useState('autre')
-  const [uploading, setUploading] = useState(false)
 
   const chargerDocs = useCallback(async () => {
     try {
@@ -521,27 +582,7 @@ function PanneauDocuments({ ticker }) {
     } catch (e) { console.error('[Docs] Erreur chargement:', e) }
   }, [ticker])
 
-  useEffect(() => { chargerDocs() }, [chargerDocs])
-
-  const handleUpload = async (e) => {
-    const fichier = e.target.files[0]
-    if (!fichier) return
-    setUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('fichier', fichier)
-      fd.append('nom', fichier.name)
-      fd.append('type_doc', typeDoc)
-      await uploadDocument(ticker, fd)
-      setAjout(false)
-      setTypeDoc('autre')
-      await chargerDocs()
-    } catch (err) {
-      alert('Erreur upload : ' + (err.message || 'inconnue'))
-    } finally {
-      setUploading(false)
-    }
-  }
+  useEffect(() => { chargerDocs() }, [chargerDocs, refreshKey])
 
   const handleDelete = async (docId, nom) => {
     if (!window.confirm(`Supprimer "${nom}" ?`)) return
@@ -560,50 +601,16 @@ function PanneauDocuments({ ticker }) {
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
           Documents ({docs.length})
         </span>
-        <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{ouvert ? '\u25B2' : '\u25BC'}</span>
+        <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{ouvert ? '▲' : '▼'}</span>
       </button>
 
       {ouvert && (
         <div style={{ marginTop: 10 }}>
-          {/* Bouton ajouter */}
-          {!ajout ? (
-            <button
-              onClick={() => setAjout(true)}
-              style={{
-                fontSize: 11, padding: '5px 12px', marginBottom: 10,
-                background: 'var(--color-background-secondary)',
-                border: '0.5px solid var(--color-border-tertiary)',
-                borderRadius: 'var(--border-radius-md)',
-                cursor: 'pointer', color: 'var(--color-text-secondary)',
-              }}
-            >
-              + Ajouter un document
-            </button>
-          ) : (
-            <div style={{ marginBottom: 10, padding: 10, background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)' }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <select
-                  value={typeDoc}
-                  onChange={e => setTypeDoc(e.target.value)}
-                  style={{ fontSize: 11, padding: '4px 8px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-tertiary)', background: 'var(--color-background-primary)', color: 'var(--color-text-primary)' }}
-                >
-                  {TYPE_DOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <button onClick={() => setAjout(false)} style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)' }}>Annuler</button>
-              </div>
-              <input
-                type="file"
-                accept=".pdf,.docx,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.txt,.csv"
-                onChange={handleUpload}
-                disabled={uploading}
-                style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}
-              />
-              {uploading && <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 4 }}>Upload et analyse en cours...</div>}
+          {docs.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+              Aucun document — utilisez le bouton 📎 Doc en haut de la fiche pour en ajouter.
             </div>
           )}
-
-          {/* Liste des documents */}
-          {docs.length === 0 && <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>Aucun document.</div>}
           {docs.map(doc => (
             <div key={doc.id} style={{ padding: '8px 0', borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -613,10 +620,7 @@ function PanneauDocuments({ ticker }) {
                   >
                     {doc.nom}
                   </a>
-                  <span style={{
-                    fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 10,
-                    background: 'var(--color-background-secondary)', color: 'var(--color-text-tertiary)',
-                  }}>
+                  <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 10, background: 'var(--color-background-secondary)', color: 'var(--color-text-tertiary)' }}>
                     {doc.type_doc_display}
                   </span>
                   <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginLeft: 8 }}>
@@ -627,7 +631,7 @@ function PanneauDocuments({ ticker }) {
                   onClick={() => handleDelete(doc.id, doc.nom)}
                   style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-danger)', padding: '2px 6px' }}
                 >
-                  \u2715
+                  ✕
                 </button>
               </div>
               {doc.resume_ia && (
@@ -643,10 +647,27 @@ function PanneauDocuments({ ticker }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Helpers couleur
+// ---------------------------------------------------------------------------
+
+function getRsiCouleur(rsi) {
+  if (rsi == null) return 'var(--color-text-primary)'
+  if (rsi < 40) return 'var(--color-text-success)'
+  if (rsi > 65) return 'var(--color-text-danger)'
+  return 'var(--color-text-warning)'
+}
+
+function getEcartMmCouleur(dernier) {
+  if (!dernier?.mm_50 || !dernier?.cloture) return 'var(--color-text-primary)'
+  const ecart = (Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100
+  return ecart > 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'
+}
+
 function Squelette() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {[280, 80, 380, 200].map((h, i) => (
+      {[120, 380, 200].map((h, i) => (
         <div key={i} style={{ height: h, background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-lg)', animation: 'pulse 1.5s ease-in-out infinite' }} />
       ))}
     </div>
