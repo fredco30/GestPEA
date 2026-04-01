@@ -180,6 +180,46 @@ def resoudre_ticker(saisie: str) -> str:
     return saisie
 
 
+def _extraire_nom_court(nom_complet: str, ticker: str) -> str:
+    """
+    Extrait un nom commercial court depuis le nom complet EODHD.
+    Ex: "L'Air Liquide S.A." → "Air Liquide"
+        "LVMH Moët Hennessy Louis Vuitton SE" → "LVMH"
+        "AB Science S.A." → "AB Science"
+        "TotalEnergies SE" → "TotalEnergies"
+    """
+    if not nom_complet:
+        return ticker.split(".")[0]
+
+    # Supprimer les suffixes juridiques courants
+    suffixes = [
+        ' S.A.', ' SA', ' SE', ' S.E.', ' N.V.', ' NV', ' PLC', ' AG',
+        ' S.p.A.', ' SpA', ' S.A', ' Inc.', ' Inc', ' Corp.', ' Corp',
+        ' Ltd.', ' Ltd', ' SCA', ' S.C.A.', ' S.A.S.',
+    ]
+    nom = nom_complet.strip()
+    for suf in suffixes:
+        if nom.upper().endswith(suf.upper()):
+            nom = nom[:len(nom) - len(suf)].strip()
+            break
+
+    # Supprimer le préfixe "L'" si le reste est assez long
+    if nom.startswith("L'") and len(nom) > 5:
+        nom = nom[2:]
+
+    # Si le nom est trop long (>20 chars), prendre le premier mot significatif
+    if len(nom) > 20:
+        # Cas spéciaux : acronymes au début (LVMH, BNP, etc.)
+        premier_mot = nom.split()[0] if nom.split() else nom
+        if premier_mot.isupper() and len(premier_mot) >= 2:
+            return premier_mot
+        # Sinon garder les 2 premiers mots
+        mots = nom.split()[:2]
+        return ' '.join(mots)
+
+    return nom
+
+
 def _exchange_depuis_isin(isin: str) -> str:
     """Déduit l'exchange EODHD probable depuis le préfixe pays de l'ISIN."""
     prefixe_to_exchange = {
@@ -242,9 +282,10 @@ def auto_remplir_titre(ticker: str) -> dict:
         # Mapping EODHD → champs Titre
         metadata['nom'] = general.get("Name", "")
 
-        # nom_court : Code EODHD sans le suffixe exchange (ex: "AI" pas "AI.PA")
-        code = general.get("Code", "")
-        metadata['nom_court'] = code.split(".")[0] if code else ticker.split(".")[0]
+        # nom_court : extraire un nom commercial court depuis le nom complet
+        # Ex: "L'Air Liquide S.A." → "Air Liquide", "LVMH Moët Hennessy..." → "LVMH"
+        nom_complet = general.get("Name", "")
+        metadata['nom_court'] = _extraire_nom_court(nom_complet, ticker)
 
         # Place : Exchange ou déduit du ticker (ex: MC.PA → PA)
         exchange = general.get("Exchange", "")
@@ -283,7 +324,9 @@ def auto_remplir_titre(ticker: str) -> dict:
             if profil:
                 metadata['nom'] = profil.get("companyName", "")
                 sym = profil.get("symbol", ticker.split(".")[0])
-                metadata['nom_court'] = sym.split(".")[0]
+                metadata['nom_court'] = _extraire_nom_court(
+                    profil.get("companyName", ""), ticker
+                )
                 exchange = profil.get("exchangeShortName", "")
                 if not exchange and "." in ticker:
                     exchange = ticker.split(".")[-1]
