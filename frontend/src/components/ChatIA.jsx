@@ -245,10 +245,7 @@ export default function ChatIA({ ticker }) {
         onClick={() => setOpen(o => !o)}
         title="Chat IA"
       >
-        {open
-          ? <span style={{ fontSize: 20 }}>✕</span>
-          : <img src="/chatbot.png" alt="Chat IA" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
-        }
+        <img src="/chatbot.png" alt="Chat IA" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
       </button>
 
       {/* Panel */}
