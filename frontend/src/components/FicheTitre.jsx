@@ -7,11 +7,29 @@
 
 import React, { useState } from 'react'
 import { useTitre } from '../hooks/useTitre'
+import { analyserTitre, updateTitre } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
 export default function FicheTitre({ ticker }) {
-  const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode } = useTitre(ticker)
+  const { titre, ohlc, periode, loading, loadingOhlc, changerPeriode, rafraichir } = useTitre(ticker)
+  const [analyseEnCours, setAnalyseEnCours] = useState(false)
+  const [analyseResultat, setAnalyseResultat] = useState(null)
+
+  const lancerAnalyse = async () => {
+    setAnalyseEnCours(true)
+    setAnalyseResultat(null)
+    try {
+      const result = await analyserTitre(ticker)
+      setAnalyseResultat(result)
+      // Rafraichir les donnees du titre apres analyse
+      rafraichir()
+    } catch (e) {
+      setAnalyseResultat({ erreur: e.message })
+    } finally {
+      setAnalyseEnCours(false)
+    }
+  }
 
   if (loading) return <Squelette />
   if (!titre)  return <div style={{ color: 'var(--color-text-tertiary)', padding: 24 }}>Titre introuvable.</div>
@@ -50,6 +68,19 @@ export default function FicheTitre({ ticker }) {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            onClick={lancerAnalyse}
+            disabled={analyseEnCours}
+            style={{
+              padding: '6px 14px', fontSize: 12, fontWeight: 500,
+              background: analyseEnCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
+              color: analyseEnCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
+              border: 'none', borderRadius: 'var(--border-radius-md)',
+              cursor: analyseEnCours ? 'wait' : 'pointer',
+            }}
+          >
+            {analyseEnCours ? 'Analyse en cours...' : 'Analyser IA'}
+          </button>
           {sentimentGlobal && <BadgeSentiment score={Number(sentimentGlobal.score)} label={sentimentGlobal.label} />}
           <PositionBadge titre={titre} dernier={dernier} />
         </div>
@@ -73,6 +104,49 @@ export default function FicheTitre({ ticker }) {
             : sentimentGlobal?.couleur === 'danger' ? 'var(--color-text-danger)'
             : 'var(--color-text-warning)'} />
       </div>
+
+      {/* ---- Position portefeuille (éditable) ---- */}
+      {titre.statut === 'portefeuille' && (
+        <PanneauPosition titre={titre} ticker={ticker} onUpdate={rafraichir} />
+      )}
+
+      {/* ---- Resultat analyse IA ---- */}
+      {analyseResultat && !analyseResultat.erreur && (
+        <div style={{
+          background: 'var(--color-background-success)', border: '1px solid var(--color-text-success)',
+          borderRadius: 'var(--border-radius-md)', padding: '10px 14px',
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-success)', marginBottom: 6 }}>
+            Analyse terminee
+          </div>
+          {Object.entries(analyseResultat.etapes || {}).map(([etape, detail]) => {
+            let texte
+            if (typeof detail === 'string') {
+              texte = detail
+            } else if (detail?.resume_ia) {
+              texte = `Score global ${detail.global?.toFixed(3) || '—'}`
+            } else if (typeof detail === 'object') {
+              texte = Object.entries(detail).map(([k, v]) => `${k}: ${v}`).join(' · ')
+            } else {
+              texte = String(detail)
+            }
+            return (
+              <div key={etape} style={{ fontSize: 11, color: 'var(--color-text-secondary)', padding: '2px 0' }}>
+                <strong>{etape}</strong> : {texte}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {analyseResultat?.erreur && (
+        <div style={{
+          background: 'var(--color-background-danger)', border: '1px solid var(--color-text-danger)',
+          borderRadius: 'var(--border-radius-md)', padding: '10px 14px',
+          fontSize: 12, color: 'var(--color-text-danger)',
+        }}>
+          Erreur : {analyseResultat.erreur}
+        </div>
+      )}
 
       {/* ---- Graphique technique ---- */}
       {ohlc && (
@@ -175,6 +249,147 @@ function CarteFondamentaux({ fond }) {
           ].map(({ label, valeur }) => valeur && (
             <MetriqueCard key={label} label={label} valeur={valeur} />
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PanneauPosition({ titre, ticker, onUpdate }) {
+  const [edition, setEdition] = useState(false)
+  const [nbActions, setNbActions] = useState(titre.nb_actions || '')
+  const [prixRevient, setPrixRevient] = useState(titre.prix_revient_moyen || '')
+  const [saving, setSaving] = useState(false)
+
+  const dernier = titre.prix_historique?.[titre.prix_historique.length - 1]
+  const coursActuel = dernier ? Number(dernier.cloture) : null
+  const nb = Number(titre.nb_actions) || 0
+  const prm = Number(titre.prix_revient_moyen) || 0
+
+  const valeurPosition = nb && coursActuel ? nb * coursActuel : null
+  const investiTotal = nb && prm ? nb * prm : null
+  const pmv = valeurPosition && investiTotal ? valeurPosition - investiTotal : null
+  const pmvPct = investiTotal ? ((valeurPosition - investiTotal) / investiTotal * 100) : null
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await updateTitre(ticker, {
+        nb_actions: Number(nbActions) || 0,
+        prix_revient_moyen: Number(prixRevient) || null,
+      })
+      setEdition(false)
+      onUpdate()
+    } catch (e) {
+      console.error('Erreur sauvegarde position:', e)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!edition && !nb) {
+    return (
+      <button
+        onClick={() => setEdition(true)}
+        style={{
+          width: '100%', padding: '10px 14px',
+          background: 'var(--color-background-secondary)',
+          border: '1px dashed var(--color-border-tertiary)',
+          borderRadius: 'var(--border-radius-md)',
+          cursor: 'pointer', fontSize: 12, color: 'var(--color-text-secondary)',
+          textAlign: 'center',
+        }}
+      >
+        + Renseigner ma position (nb actions, prix d'achat)
+      </button>
+    )
+  }
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)', padding: '12px 16px',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: edition ? 10 : 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>Ma position</span>
+        {!edition && (
+          <button
+            onClick={() => { setEdition(true); setNbActions(titre.nb_actions || ''); setPrixRevient(titre.prix_revient_moyen || '') }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--color-text-tertiary)' }}
+          >
+            Modifier
+          </button>
+        )}
+      </div>
+
+      {edition ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Nb actions</label>
+            <input
+              type="number"
+              value={nbActions}
+              onChange={e => setNbActions(e.target.value)}
+              style={{
+                width: 100, padding: '6px 8px', fontSize: 12,
+                border: '1px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--border-radius-sm)',
+                background: 'var(--color-background-primary)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--color-text-tertiary)', display: 'block', marginBottom: 3 }}>Prix revient moyen</label>
+            <input
+              type="number"
+              step="0.01"
+              value={prixRevient}
+              onChange={e => setPrixRevient(e.target.value)}
+              style={{
+                width: 120, padding: '6px 8px', fontSize: 12,
+                border: '1px solid var(--color-border-tertiary)',
+                borderRadius: 'var(--border-radius-sm)',
+                background: 'var(--color-background-primary)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: '6px 14px', fontSize: 11, fontWeight: 500,
+              background: 'var(--color-text-success)', color: '#fff',
+              border: 'none', borderRadius: 'var(--border-radius-sm)',
+              cursor: 'pointer',
+            }}
+          >
+            {saving ? '...' : 'Enregistrer'}
+          </button>
+          <button
+            onClick={() => setEdition(false)}
+            style={{
+              padding: '6px 10px', fontSize: 11,
+              background: 'none', border: '1px solid var(--color-border-tertiary)',
+              borderRadius: 'var(--border-radius-sm)',
+              cursor: 'pointer', color: 'var(--color-text-secondary)',
+            }}
+          >
+            Annuler
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8, marginTop: 8 }}>
+          <MetriqueCard label="Nb actions" valeur={nb.toLocaleString('fr-FR')} />
+          <MetriqueCard label="PRU" valeur={prm ? `${prm.toFixed(2)} \u20AC` : '\u2014'} />
+          <MetriqueCard label="Valeur position" valeur={valeurPosition ? `${valeurPosition.toLocaleString('fr-FR', {minimumFractionDigits: 2})} \u20AC` : '\u2014'} />
+          <MetriqueCard
+            label="Plus/moins value"
+            valeur={pmv != null ? `${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', {minimumFractionDigits: 2})} \u20AC (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)` : '\u2014'}
+            couleur={pmv != null ? (pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : undefined}
+          />
         </div>
       )}
     </div>

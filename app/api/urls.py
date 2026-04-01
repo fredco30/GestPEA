@@ -32,6 +32,10 @@ urlpatterns = [
          views.TitreViewSet.as_view({'get': 'config_alertes', 'patch': 'config_alertes'}),
          name='titre-config'),
 
+    path('titres/<str:pk>/analyser/',
+         views.TitreViewSet.as_view({'post': 'analyser'}),
+         name='titre-analyser'),
+
     # --- Alertes ---
     path('alertes/',
          views.AlerteListView.as_view(),

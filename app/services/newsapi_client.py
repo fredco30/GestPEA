@@ -160,12 +160,20 @@ class NewsAPIClient:
         total_crees = 0
 
         for ticker, titre_obj in titres_map.items():
-            # Requete avec le nom court ou le nom complet
+            # Construire une requete precise avec guillemets pour recherche exacte
+            # + contexte financier pour filtrer les articles non pertinents
             nom_recherche = titre_obj.nom_court or titre_obj.nom or ticker.split(".")[0]
+
+            # Guillemets pour recherche exacte (evite que "AB" matche n'importe quoi)
+            query = f'"{nom_recherche}"'
+
+            # Pour les noms courts (<5 chars), ajouter contexte bourse/action
+            if len(nom_recherche) <= 5:
+                query = f'"{nom_recherche}" AND (bourse OR action OR cours OR résultats OR dividende)'
 
             try:
                 articles_bruts = self.rechercher_articles(
-                    query=nom_recherche,
+                    query=query,
                     depuis_jours=depuis_jours,
                     langue="fr",
                     page_size=10,

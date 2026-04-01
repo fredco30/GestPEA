@@ -81,6 +81,10 @@ export const getOHLC = (ticker, periode = '1A') =>
 export const importerHistorique = (ticker) =>
   post(`/titres/${ticker}/importer/`, {})
 
+/** Lancer l'analyse complete IA (indicateurs + news + scoring + sentiment) */
+export const analyserTitre = (ticker) =>
+  post(`/titres/${ticker}/analyser/`, {})
+
 /** Lire la config alertes d'un titre */
 export const getConfigAlertes = (ticker) =>
   get(`/titres/${ticker}/config/`)
