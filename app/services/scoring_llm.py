@@ -310,6 +310,301 @@ def _agreger_sentiment_jour(ticker: str, jour: date) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 1b. SENTIMENT TECHNIQUE + MIXTE + RAPPORT IA
+# ---------------------------------------------------------------------------
+
+def calculer_sentiment_technique(ticker: str) -> dict | None:
+    """
+    Calcule un score de sentiment technique (-1 à +1) basé sur les indicateurs
+    de la dernière bougie : RSI, MACD, position vs MM50/MM200, Bollinger.
+
+    Retourne un dict avec score, details et resume ou None si pas de données.
+    """
+    from app.models import PrixJournalier, Titre
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        return None
+
+    bougie = titre.prix_journaliers.order_by('-date').first()
+    if not bougie:
+        return None
+
+    signaux = []
+    score_total = 0.0
+    nb_signaux = 0
+
+    # --- RSI ---
+    if bougie.rsi_14 is not None:
+        rsi = float(bougie.rsi_14)
+        nb_signaux += 1
+        if rsi < 30:
+            s = 0.8
+            signaux.append(f"RSI({rsi:.1f}) en forte survente → signal haussier")
+        elif rsi < 40:
+            s = 0.4
+            signaux.append(f"RSI({rsi:.1f}) en survente modérée → légèrement haussier")
+        elif rsi > 70:
+            s = -0.8
+            signaux.append(f"RSI({rsi:.1f}) en fort surachat → signal baissier")
+        elif rsi > 60:
+            s = -0.3
+            signaux.append(f"RSI({rsi:.1f}) en surachat modéré → légèrement baissier")
+        else:
+            s = 0.0
+            signaux.append(f"RSI({rsi:.1f}) en zone neutre")
+        score_total += s
+
+    # --- MACD ---
+    if bougie.macd_hist is not None:
+        hist = float(bougie.macd_hist)
+        nb_signaux += 1
+        if hist > 0.05:
+            s = 0.5
+            signaux.append(f"MACD histogramme positif ({hist:+.4f}) → momentum haussier")
+        elif hist < -0.05:
+            s = -0.5
+            signaux.append(f"MACD histogramme négatif ({hist:+.4f}) → momentum baissier")
+        else:
+            s = 0.0
+            signaux.append(f"MACD neutre ({hist:+.4f})")
+        score_total += s
+
+    # --- Position vs MM50 ---
+    if bougie.mm_50 is not None and bougie.cloture:
+        cloture = float(bougie.cloture)
+        mm50 = float(bougie.mm_50)
+        ecart_pct = ((cloture - mm50) / mm50) * 100
+        nb_signaux += 1
+        if ecart_pct > 5:
+            s = 0.4
+            signaux.append(f"Cours {ecart_pct:+.1f}% au-dessus de la MM50 → tendance haussière")
+        elif ecart_pct < -5:
+            s = -0.4
+            signaux.append(f"Cours {ecart_pct:+.1f}% en dessous de la MM50 → tendance baissière")
+        else:
+            s = ecart_pct / 12.5  # normaliser entre -0.4 et +0.4
+            signaux.append(f"Cours {ecart_pct:+.1f}% vs MM50 → proche de la moyenne")
+        score_total += s
+
+    # --- Position vs MM200 (tendance long terme) ---
+    if bougie.mm_200 is not None and bougie.cloture:
+        cloture = float(bougie.cloture)
+        mm200 = float(bougie.mm_200)
+        ecart_pct = ((cloture - mm200) / mm200) * 100
+        nb_signaux += 1
+        if ecart_pct > 0:
+            s = 0.3
+            signaux.append(f"Au-dessus de la MM200 ({ecart_pct:+.1f}%) → tendance LT haussière")
+        else:
+            s = -0.3
+            signaux.append(f"En dessous de la MM200 ({ecart_pct:+.1f}%) → tendance LT baissière")
+        score_total += s
+
+    # --- Bollinger ---
+    if bougie.boll_inf is not None and bougie.boll_sup is not None and bougie.cloture:
+        cloture = float(bougie.cloture)
+        boll_inf = float(bougie.boll_inf)
+        boll_sup = float(bougie.boll_sup)
+        boll_range = boll_sup - boll_inf
+        if boll_range > 0:
+            position = (cloture - boll_inf) / boll_range  # 0 = bande basse, 1 = bande haute
+            nb_signaux += 1
+            if position < 0.15:
+                s = 0.5
+                signaux.append(f"Proche bande Bollinger basse ({position:.0%}) → rebond probable")
+            elif position > 0.85:
+                s = -0.5
+                signaux.append(f"Proche bande Bollinger haute ({position:.0%}) → correction probable")
+            else:
+                s = 0.0
+                signaux.append(f"Position Bollinger médiane ({position:.0%})")
+            score_total += s
+
+    if nb_signaux == 0:
+        return None
+
+    score_final = max(-1.0, min(1.0, round(score_total / nb_signaux, 3)))
+
+    return {
+        'score': score_final,
+        'signaux': signaux,
+        'nb_signaux': nb_signaux,
+        'date': str(bougie.date),
+    }
+
+
+def generer_sentiment_mixte(ticker: str) -> dict | None:
+    """
+    Génère un sentiment mixte (technique + presse) avec un rapport IA écrit.
+    Met à jour les ScoreSentiment en base avec resume_ia.
+
+    Retourne le dict de résultat ou None.
+    """
+    from app.models import Article, ScoreSentiment, Titre
+    from datetime import date as dt_date
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        return None
+
+    aujourd_hui = dt_date.today()
+
+    # --- 1. Sentiment technique ---
+    tech = calculer_sentiment_technique(ticker)
+    score_tech = tech['score'] if tech else 0.0
+    signaux_tech = tech['signaux'] if tech else []
+
+    # --- 2. Sentiment presse (déjà en base) ---
+    score_presse_obj = ScoreSentiment.objects.filter(
+        titre=titre, date=aujourd_hui, source='presse'
+    ).first()
+    score_presse = float(score_presse_obj.score) if score_presse_obj else None
+
+    # Articles récents pour le contexte IA
+    articles_recents = list(
+        Article.objects.filter(
+            titre=titre,
+            score_sentiment__isnull=False,
+        ).order_by('-date_pub')[:5].values_list('titre_art', 'score_sentiment')
+    )
+
+    # --- 3. Score global mixte ---
+    if score_presse is not None:
+        # 40% technique + 60% presse (profil PEA long terme, presse pèse plus)
+        score_global = round(0.4 * score_tech + 0.6 * score_presse, 3)
+    else:
+        # Pas d'articles → 100% technique
+        score_global = score_tech
+
+    # --- 4. Rapport IA ---
+    resume_ia = _generer_rapport_sentiment(
+        ticker=ticker,
+        nom=titre.nom_court or titre.nom,
+        score_tech=score_tech,
+        signaux_tech=signaux_tech,
+        score_presse=score_presse,
+        articles_recents=articles_recents,
+        score_global=score_global,
+    )
+
+    # --- 5. Sauvegarder en base ---
+    # Score technique
+    ScoreSentiment.objects.update_or_create(
+        titre=titre, date=aujourd_hui, source='social',
+        defaults={
+            'score': score_tech,
+            'nb_articles': 0,
+            'resume_ia': f"Sentiment technique basé sur {len(signaux_tech)} indicateurs.",
+        }
+    )
+
+    # Score global mixte avec rapport IA
+    variation = None
+    score_hier = ScoreSentiment.objects.filter(
+        titre=titre, date=aujourd_hui - timedelta(days=1), source='global'
+    ).first()
+    if score_hier and score_hier.score is not None:
+        variation = round(score_global - float(score_hier.score), 3)
+
+    ScoreSentiment.objects.update_or_create(
+        titre=titre, date=aujourd_hui, source='global',
+        defaults={
+            'score': score_global,
+            'nb_articles': len(articles_recents),
+            'variation_24h': variation,
+            'resume_ia': resume_ia,
+        }
+    )
+
+    logger.info(
+        f"[LLM] Sentiment mixte {ticker} — tech={score_tech}, "
+        f"presse={score_presse}, global={score_global}"
+    )
+
+    return {
+        'ticker': ticker,
+        'score_technique': score_tech,
+        'score_presse': score_presse,
+        'score_global': score_global,
+        'resume_ia': resume_ia,
+        'signaux': signaux_tech,
+    }
+
+
+def _generer_rapport_sentiment(ticker, nom, score_tech, signaux_tech,
+                                score_presse, articles_recents, score_global):
+    """Génère un rapport IA écrit sur le sentiment d'un titre."""
+    try:
+        client = _get_client()
+    except (ImportError, ValueError) as e:
+        logger.warning(f"[LLM] Rapport impossible : {e}")
+        return _rapport_fallback(nom, score_tech, signaux_tech, score_presse, score_global)
+
+    # Construire le contexte
+    ctx_tech = "\n".join(f"  - {s}" for s in signaux_tech) if signaux_tech else "  Aucun indicateur disponible"
+
+    ctx_articles = ""
+    if articles_recents:
+        ctx_articles = "\n".join(
+            f"  - \"{titre}\" (score: {float(score):+.2f})"
+            for titre, score in articles_recents
+        )
+    else:
+        ctx_articles = "  Aucun article récent collecté"
+
+    prompt = f"""Rédige un bref rapport de sentiment (3-5 phrases) pour l'action {nom} ({ticker}).
+
+Données :
+- Score technique : {score_tech:+.3f} (basé sur {len(signaux_tech)} indicateurs)
+- Signaux techniques :
+{ctx_tech}
+- Score presse : {f"{score_presse:+.3f}" if score_presse is not None else "non disponible"}
+- Articles récents :
+{ctx_articles}
+- Score global mixte : {score_global:+.3f}
+
+Règles :
+- Sois concis et factuel (3-5 phrases max)
+- Mentionne les signaux techniques clés
+- Si des articles existent, résume le sentiment presse
+- Indique la tendance générale (haussière, baissière, neutre)
+- TERMINE TOUJOURS par : "Cette observation ne constitue pas un conseil d'investissement."
+- Rédige en français"""
+
+    try:
+        response = client.chat.complete(
+            model=MODEL_ALERTE,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un analyste financier qui rédige des rapports de sentiment "
+                    "concis et factuels pour des investisseurs PEA long terme."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"[LLM] Rapport sentiment {ticker} : {e}")
+        return _rapport_fallback(nom, score_tech, signaux_tech, score_presse, score_global)
+
+
+def _rapport_fallback(nom, score_tech, signaux_tech, score_presse, score_global):
+    """Rapport de secours sans LLM."""
+    tendance = "haussière" if score_global > 0.15 else "baissière" if score_global < -0.15 else "neutre"
+    lignes = [f"Analyse technique de {nom} : tendance {tendance} (score {score_global:+.3f})."]
+    if signaux_tech:
+        lignes.append(f"Principaux signaux : {signaux_tech[0]}.")
+    if score_presse is not None:
+        lignes.append(f"Le sentiment presse est {'positif' if score_presse > 0.1 else 'négatif' if score_presse < -0.1 else 'neutre'} ({score_presse:+.3f}).")
+    lignes.append("Cette observation ne constitue pas un conseil d'investissement.")
+    return " ".join(lignes)
+
+
+# ---------------------------------------------------------------------------
 # 2. GÉNÉRATION DU TEXTE D'ALERTE
 # ---------------------------------------------------------------------------
 
