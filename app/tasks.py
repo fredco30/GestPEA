@@ -27,11 +27,16 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True, max_retries=2, default_retry_delay=300)
 def fetch_cours_eod_task(self):
     """
-    Récupère la bougie EOD du jour pour TOUS les titres actifs.
-    Utilise maj_cours_du_jour() en boucle (1 requête par titre).
+    Récupère les bougies EOD du jour pour TOUS les titres actifs.
+
+    Stratégie :
+      1. yfinance en mode batch (1 appel HTTP pour N tickers, 0 quota)
+      2. Fallback EODHD pour les tickers échoués (1 req/ticker)
+
+    Économie : libère les 20 req/jour EODHD pour fondamentaux et news.
     """
+    from datetime import date
     from app.models import Titre
-    from app.services.eodhd import EODHDClient
 
     try:
         tickers = list(
@@ -44,29 +49,50 @@ def fetch_cours_eod_task(self):
             logger.info("[Task] fetch_cours_eod : aucun titre actif.")
             return {'status': 'skip', 'raison': 'aucun titre'}
 
-        client = EODHDClient()
-
-        if not client.bourse_ouverte():
-            logger.info("[Task] fetch_cours_eod : marché fermé aujourd'hui.")
+        if date.today().weekday() >= 5:
+            logger.info("[Task] fetch_cours_eod : marché fermé (week-end).")
             return {'status': 'skip', 'raison': 'marché fermé'}
 
         logger.info(f"[Task] fetch_cours_eod : {len(tickers)} tickers → {tickers}")
 
+        # --- Source 1 : yfinance (batch, gratuit, 0 quota) ---
         ok, ko = [], []
-        for ticker in tickers:
+        try:
+            from app.services.yfinance_client import YFinanceClient
+            yf_client = YFinanceClient()
+            result = yf_client.maj_cours_batch(tickers)
+            ok = result['ok']
+            ko = result['ko']
+            logger.info(f"[Task] yfinance : {len(ok)} ok, {len(ko)} ko")
+        except Exception as e:
+            logger.error(f"[Task] yfinance indisponible : {e}")
+            ko = list(tickers)
+
+        # --- Source 2 : fallback EODHD pour les échecs ---
+        fallback_ok = []
+        if ko:
+            logger.info(f"[Task] Fallback EODHD pour {len(ko)} tickers : {ko}")
             try:
-                prix = client.maj_cours_du_jour(ticker)
-                if prix:
-                    ok.append(ticker)
+                from app.services.eodhd import EODHDClient
+                client = EODHDClient()
+                for ticker in ko:
+                    try:
+                        prix = client.maj_cours_du_jour(ticker)
+                        if prix:
+                            fallback_ok.append(ticker)
+                    except Exception as e:
+                        logger.error(f"[Task] Fallback EODHD {ticker} : {e}")
             except Exception as e:
-                logger.error(f"[Task] Erreur cours {ticker} : {e}")
-                ko.append(ticker)
+                logger.error(f"[Task] EODHD fallback global : {e}")
+
+        ko_final = [t for t in ko if t not in fallback_ok]
 
         return {
             'status': 'ok',
-            'ok': ok,
-            'ko': ko,
-            'requetes': client.nb_requetes_session,
+            'ok_yfinance': ok,
+            'ok_eodhd_fallback': fallback_ok,
+            'ko': ko_final,
+            'source_primaire': 'yfinance',
         }
 
     except Exception as exc:
@@ -731,26 +757,39 @@ def digest_hebdomadaire_task(self):
 @shared_task(bind=True)
 def import_historique_task(self, ticker: str):
     """
-    Importe l'historique OHLCV complet d'un titre depuis EODHD.
-    Exemple : import_historique_task.delay('MC.PA')
+    Importe l'historique OHLCV complet d'un titre.
+    Source primaire : yfinance (gratuit, ~20 ans d'historique).
+    Fallback : EODHD (1 requête quota).
     """
-    from app.services.eodhd import EODHDClient
+    nb = 0
+
+    # --- Source 1 : yfinance (gratuit) ---
     try:
-        client = EODHDClient()
-        nb = client.import_historique_bulk(ticker)
-        logger.info(f"[Task] import_historique {ticker} : {nb} bougies importées")
+        from app.services.yfinance_client import YFinanceClient
+        yf_client = YFinanceClient()
+        nb = yf_client.import_historique(ticker)
+        logger.info(f"[Task] import_historique {ticker} via yfinance : {nb} bougies")
+    except Exception as e:
+        logger.warning(f"[Task] yfinance échoué pour {ticker} : {e}")
 
-        if nb > 0:
-            from app.models import Titre
-            titre = Titre.objects.get(ticker=ticker)
-            from app.services.indicators import calculate_indicators
-            calculate_indicators(titre)
+    # --- Fallback EODHD si yfinance n'a rien retourné ---
+    if nb == 0:
+        try:
+            from app.services.eodhd import EODHDClient
+            client = EODHDClient()
+            nb = client.import_historique_bulk(ticker)
+            logger.info(f"[Task] import_historique {ticker} via EODHD : {nb} bougies")
+        except Exception as exc:
+            logger.error(f"[Task] import_historique {ticker} — erreur : {exc}", exc_info=True)
+            raise self.retry(exc=exc)
 
-        return {'status': 'ok', 'ticker': ticker, 'bougies': nb}
+    if nb > 0:
+        from app.models import Titre
+        titre = Titre.objects.get(ticker=ticker)
+        from app.services.indicators import calculate_indicators
+        calculate_indicators(titre)
 
-    except Exception as exc:
-        logger.error(f"[Task] import_historique {ticker} — erreur : {exc}", exc_info=True)
-        raise self.retry(exc=exc)
+    return {'status': 'ok', 'ticker': ticker, 'bougies': nb}
 
 
 # ---------------------------------------------------------------------------
