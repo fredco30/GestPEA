@@ -108,71 +108,12 @@ class RedditCollector:
         Pour chaque titre, recherche les posts Reddit mentionnant le nom
         dans les subreddits FR finance.
 
-        historique=True : recherche sur 1 an (time_filter='year').
-        historique=False : recherche sur 1 semaine (time_filter='week').
+        DÉSACTIVÉ : Reddit bloque les requêtes sans OAuth depuis 2024.
+        L'API JSON publique retourne systématiquement 403.
+        Les sources Google News + NewsAPI couvrent largement les besoins.
         """
-        titres_map = {
-            t.ticker: t
-            for t in Titre.objects.filter(ticker__in=tickers)
-        }
-
-        urls_connues = set(
-            Article.objects.filter(source='reddit')
-            .values_list('url', flat=True)
-        )
-
-        time_filter = 'year' if historique else 'week'
-        limit = 50 if historique else 25
-        total_crees = 0
-
-        for ticker, titre_obj in titres_map.items():
-            nom = titre_obj.nom_court or titre_obj.nom or ticker.split('.')[0]
-
-            a_creer = []
-            for subreddit in SUBREDDITS:
-                posts = self._search_subreddit(
-                    subreddit=subreddit,
-                    query=nom,
-                    limit=limit,
-                    time_filter=time_filter,
-                )
-
-                for post in posts:
-                    url = (post.get('url') or '')[:500]
-                    if not url or url in urls_connues:
-                        continue
-
-                    # Vérifier pertinence
-                    titre_post = post.get('title', '')
-                    if not self._est_pertinent(nom, titre_post):
-                        continue
-
-                    created = post.get('created_utc', 0)
-                    date_pub = (
-                        datetime.utcfromtimestamp(created).replace(tzinfo=timezone.utc)
-                        if created else timezone.now()
-                    )
-
-                    a_creer.append(Article(
-                        titre=titre_obj,
-                        date_pub=date_pub,
-                        source='reddit',
-                        url=url,
-                        titre_art=titre_post[:300],
-                        extrait=post.get('selftext', '')[:2000],
-                        auteur=f"u/{post.get('author', '?')} · r/{post.get('subreddit', '')}",
-                    ))
-                    urls_connues.add(url)
-
-            if a_creer:
-                with transaction.atomic():
-                    Article.objects.bulk_create(a_creer, ignore_conflicts=True)
-                total_crees += len(a_creer)
-
-            logger.info("Reddit %s : %d posts créés (historique=%s)",
-                        ticker, len(a_creer), historique)
-
-        return total_crees
+        logger.info("Reddit désactivé (API publique bloquée 403). Utiliser Google News + NewsAPI.")
+        return 0
 
     # ------------------------------------------------------------------
     # Helpers
