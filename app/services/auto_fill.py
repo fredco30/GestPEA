@@ -207,15 +207,38 @@ def _extraire_nom_court(nom_complet: str, ticker: str) -> str:
     if nom.startswith("L'") and len(nom) > 5:
         nom = nom[2:]
 
-    # Si le nom est trop long (>20 chars), prendre le premier mot significatif
+    # Si le nom est trop long (>20 chars), raccourcir intelligemment
     if len(nom) > 20:
+        mots = nom.split()
+        if not mots:
+            return nom[:20]
+
         # Cas spéciaux : acronymes au début (LVMH, BNP, etc.)
-        premier_mot = nom.split()[0] if nom.split() else nom
-        if premier_mot.isupper() and len(premier_mot) >= 2:
-            return premier_mot
-        # Sinon garder les 2 premiers mots
-        mots = nom.split()[:2]
-        return ' '.join(mots)
+        if mots[0].isupper() and len(mots[0]) >= 2:
+            return mots[0]
+
+        # Supprimer les mots non-significatifs au début (Compagnie, Société, Groupe, etc.)
+        mots_vides = {'compagnie', 'société', 'societe', 'groupe', 'cie', 'etablissements', 'de', 'des', 'du', 'la', 'le', 'les'}
+        mots_significatifs = []
+        debut_passe = False
+        for mot in mots:
+            if not debut_passe and mot.lower() in mots_vides:
+                continue
+            debut_passe = True
+            mots_significatifs.append(mot)
+
+        if mots_significatifs:
+            # Prendre les mots significatifs qui tiennent en 20 chars
+            resultat = ''
+            for mot in mots_significatifs:
+                candidat = (resultat + ' ' + mot).strip() if resultat else mot
+                if len(candidat) > 20:
+                    break
+                resultat = candidat
+            return resultat or mots_significatifs[0][:20]
+
+        # Fallback : premiers 20 chars
+        return nom[:20]
 
     return nom
 
