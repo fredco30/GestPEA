@@ -504,11 +504,13 @@ class SentimentView(APIView):
         # Dernier score global
         dernier_global = scores_global.order_by('-date').first()
 
-        # Articles recents scores
+        # Articles recents scores (hors articles non pertinents)
         articles = Article.objects.filter(
             titre=titre,
             date_pub__date__gte=depuis,
             score_sentiment__isnull=False,
+        ).exclude(
+            tags__contains=["hors_sujet"]
         ).order_by('-date_pub')[:20]
 
         # Topics les plus frequents

@@ -38,6 +38,7 @@ MODEL_SCORING  = "mistral-small-latest"   # rapide + économique pour le scoring
 MODEL_ALERTE   = "mistral-large-latest"   # meilleure qualité rédactionnelle pour les alertes
 MAX_TOKENS     = 800
 BATCH_SIZE     = 5    # nb d'articles scorés par appel API (économie de tokens)
+RELEVANCE_BATCH_SIZE = 15  # nb d'articles vérifiés en pertinence par appel (plus large car réponse courte)
 
 TOPICS_CONNUS = [
     "résultats trimestriels", "dividende", "acquisition", "fusion",
@@ -75,12 +76,133 @@ def _get_client():
 
 
 # ---------------------------------------------------------------------------
+# 0. FILTRAGE PERTINENCE DES ARTICLES (IA)
+# ---------------------------------------------------------------------------
+
+def filtrer_articles_pertinents(
+    articles_candidats: list[dict],
+    ticker: str,
+    nom_entreprise: str,
+    secteur: str = "",
+) -> list[dict]:
+    """
+    Filtre une liste d'articles candidats via Mistral pour ne garder que ceux
+    qui concernent réellement l'entreprise ou son secteur.
+
+    Traitement par batch de RELEVANCE_BATCH_SIZE articles pour économiser les tokens.
+    Utilise mistral-small (le plus économique).
+
+    Args:
+        articles_candidats: liste de dicts avec au minimum 'titre_art' et 'extrait'
+        ticker: ex. "SGO.PA"
+        nom_entreprise: ex. "Compagnie de Saint-Gobain S.A."
+        secteur: ex. "Industrials"
+
+    Returns:
+        liste filtrée (sous-ensemble de articles_candidats) — seuls les pertinents.
+    """
+    if not articles_candidats:
+        return []
+
+    try:
+        client = _get_client()
+    except (ImportError, ValueError) as e:
+        logger.warning("[LLM] filtrer_pertinence : Mistral non disponible (%s) — skip filtre", e)
+        return articles_candidats  # fallback : garder tout si Mistral indisponible
+
+    pertinents = []
+
+    for i in range(0, len(articles_candidats), RELEVANCE_BATCH_SIZE):
+        batch = articles_candidats[i:i + RELEVANCE_BATCH_SIZE]
+        try:
+            batch_result = _filtrer_batch_pertinence(client, batch, ticker, nom_entreprise, secteur)
+            pertinents.extend(batch_result)
+        except Exception as e:
+            logger.error("[LLM] filtrer_pertinence batch erreur : %s — on garde le batch", e)
+            pertinents.extend(batch)  # en cas d'erreur, garder plutôt que jeter
+
+    nb_filtres = len(articles_candidats) - len(pertinents)
+    if nb_filtres > 0:
+        logger.info("[LLM] Pertinence %s : %d/%d articles gardés (%d filtrés)",
+                    ticker, len(pertinents), len(articles_candidats), nb_filtres)
+
+    return pertinents
+
+
+def _filtrer_batch_pertinence(
+    client, batch: list[dict], ticker: str, nom_entreprise: str, secteur: str
+) -> list[dict]:
+    """Filtre un lot d'articles via un seul appel Mistral."""
+
+    articles_json = []
+    for idx, art in enumerate(batch):
+        articles_json.append({
+            "id": idx,
+            "titre": (art.get("titre_art") or art.get("title") or "")[:200],
+            "extrait": (art.get("extrait") or art.get("description") or "")[:300],
+        })
+
+    prompt = f"""Tu es un analyste financier. Vérifie si chaque article ci-dessous concerne réellement l'entreprise "{nom_entreprise}" (ticker: {ticker}) ou son secteur ({secteur}).
+
+Un article est PERTINENT s'il :
+- Mentionne directement l'entreprise, ses produits, ses dirigeants, ses résultats
+- Concerne une entreprise concurrente directe ou un événement sectoriel impactant
+- Traite d'un sujet macroéconomique ayant un impact direct sur le secteur
+
+Un article est NON PERTINENT s'il :
+- Mentionne un homonyme (ex: "compagnie" dans un contexte non financier)
+- N'a aucun lien avec l'entreprise ou son secteur d'activité
+- Traite d'un sujet sans rapport (sport, faits divers, politique générale, jeux vidéo...)
+
+Articles à vérifier :
+{json.dumps(articles_json, ensure_ascii=False, indent=2)}
+
+Réponds UNIQUEMENT avec un JSON : un tableau d'IDs des articles PERTINENTS.
+Exemple : [0, 2, 4]
+Si aucun article n'est pertinent : []"""
+
+    try:
+        response = client.chat.complete(
+            model=MODEL_SCORING,
+            max_tokens=200,
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un filtre de pertinence d'articles financiers. "
+                    "Tu réponds uniquement avec un tableau JSON d'IDs. "
+                    "Sois strict : en cas de doute, exclure l'article."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        texte = response.choices[0].message.content.strip()
+
+        # Nettoyer le JSON (parfois entouré de ```json ... ```)
+        if "```" in texte:
+            texte = texte.split("```")[1]
+            if texte.startswith("json"):
+                texte = texte[4:]
+            texte = texte.strip()
+
+        ids_pertinents = set(json.loads(texte))
+        return [art for idx, art in enumerate(batch) if idx in ids_pertinents]
+
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+        logger.warning("[LLM] Parsing pertinence échoué : %s — on garde le batch", e)
+        return batch
+    except Exception as e:
+        logger.error("[LLM] Appel Mistral pertinence échoué : %s", e)
+        return batch
+
+
+# ---------------------------------------------------------------------------
 # 1. SCORING SENTIMENT DES ARTICLES
 # ---------------------------------------------------------------------------
 
 def scorer_articles(article_ids: list[int]) -> int:
     """
-    Score le sentiment de chaque article via Claude API.
+    Score le sentiment de chaque article via Mistral API.
+    Étape préalable : filtre les articles non pertinents via IA.
     Traite les articles par lots (BATCH_SIZE) pour économiser les tokens.
 
     Args:
@@ -100,10 +222,49 @@ def scorer_articles(article_ids: list[int]) -> int:
         return 0
 
     client  = _get_client()
-    nb_ok   = 0
+
+    # --- Étape 0 : filtrer les articles non pertinents par titre ---
+    articles_list = list(articles)
+    articles_par_titre = {}
+    for art in articles_list:
+        tk = art.titre.ticker
+        if tk not in articles_par_titre:
+            articles_par_titre[tk] = []
+        articles_par_titre[tk].append(art)
+
+    articles_pertinents = []
+    nb_filtres = 0
+    for tk, arts in articles_par_titre.items():
+        titre_obj = arts[0].titre
+        candidats = [{"titre_art": a.titre_art, "extrait": (a.extrait or "")[:300], "_obj": a} for a in arts]
+        try:
+            gardes = filtrer_articles_pertinents(
+                candidats,
+                ticker=tk,
+                nom_entreprise=titre_obj.nom or titre_obj.nom_court or tk,
+                secteur=titre_obj.secteur or "",
+            )
+            titres_gardes = {c.get("titre_art") for c in gardes}
+            for art in arts:
+                if art.titre_art in titres_gardes:
+                    articles_pertinents.append(art)
+                else:
+                    # Marquer comme non pertinent (score 0, tag spécial)
+                    art.score_sentiment = 0
+                    art.tags = ["hors_sujet"]
+                    art.save(update_fields=["score_sentiment", "tags"])
+                    nb_filtres += 1
+        except Exception as e:
+            logger.warning("[LLM] Filtre pertinence %s échoué : %s — on garde tout", tk, e)
+            articles_pertinents.extend(arts)
+
+    if nb_filtres > 0:
+        logger.info("[LLM] %d articles marqués hors_sujet (non pertinents)", nb_filtres)
+
+    articles_list = articles_pertinents
+    nb_ok = 0
 
     # Traitement par batch
-    articles_list = list(articles)
     for i in range(0, len(articles_list), BATCH_SIZE):
         batch = articles_list[i:i + BATCH_SIZE]
         nb_ok += _scorer_batch(client, batch)

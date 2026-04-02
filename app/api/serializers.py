@@ -256,9 +256,11 @@ class TitreDetailSerializer(serializers.ModelSerializer):
         return AlerteListSerializer(qs, many=True).data
 
     def get_articles_recents(self, obj):
-        """10 derniers articles scorés."""
+        """10 derniers articles scorés, hors articles non pertinents."""
         qs = obj.articles.filter(
             score_sentiment__isnull=False
+        ).exclude(
+            tags__contains=["hors_sujet"]
         ).order_by('-date_pub')[:10]
         return ArticleSerializer(qs, many=True).data
 
