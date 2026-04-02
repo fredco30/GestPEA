@@ -14,7 +14,7 @@ from app.models import (
     Titre, PrixJournalier, Fondamentaux,
     ScoreSentiment, Article, Signal,
     AlerteConfig, Alerte, ProfilInvestisseur, ApiQuota,
-    DocumentTitre,
+    DocumentTitre, PatternDetecte, ArticleSectoriel,
 )
 
 
@@ -185,6 +185,7 @@ class TitreDetailSerializer(serializers.ModelSerializer):
     signaux_actifs   = serializers.SerializerMethodField()
     alertes_recentes = serializers.SerializerMethodField()
     articles_recents = serializers.SerializerMethodField()
+    patterns_actifs  = serializers.SerializerMethodField()
     valeur_position  = serializers.ReadOnlyField()
     plus_moins_value = serializers.ReadOnlyField()
 
@@ -198,6 +199,7 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             'prix_historique', 'fondamentaux',
             'sentiments_30j', 'signaux_actifs',
             'alertes_recentes', 'articles_recents',
+            'patterns_actifs',
             'notes',
             'score_conviction', 'explication_conviction', 'date_calcul_conviction',
         ]
@@ -240,6 +242,11 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             score_sentiment__isnull=False
         ).order_by('-date_pub')[:10]
         return ArticleSerializer(qs, many=True).data
+
+    def get_patterns_actifs(self, obj):
+        """Patterns graphiques en formation ou confirmés récents."""
+        qs = obj.patterns.filter(statut__in=['en_formation', 'confirme']).order_by('-date_detection')[:5]
+        return PatternDetecteSerializer(qs, many=True).data
 
 
 class TitreCreateSerializer(serializers.ModelSerializer):
@@ -430,6 +437,34 @@ class DashboardSerializer(serializers.Serializer):
 # ---------------------------------------------------------------------------
 # DOCUMENTS
 # ---------------------------------------------------------------------------
+
+class PatternDetecteSerializer(serializers.ModelSerializer):
+    type_pattern_display = serializers.CharField(source='get_type_pattern_display', read_only=True)
+    direction_display    = serializers.CharField(source='get_direction_display', read_only=True)
+    statut_display       = serializers.CharField(source='get_statut_display', read_only=True)
+
+    class Meta:
+        model  = PatternDetecte
+        fields = [
+            'id', 'type_pattern', 'type_pattern_display',
+            'statut', 'statut_display', 'direction', 'direction_display',
+            'date_debut', 'date_fin', 'date_detection',
+            'prix_support', 'prix_resistance', 'prix_objectif', 'prix_invalidation',
+            'points_cles', 'fiabilite', 'description',
+        ]
+
+
+class ArticleSectorielSerializer(serializers.ModelSerializer):
+    type_impact_display = serializers.CharField(source='get_type_impact_display', read_only=True)
+
+    class Meta:
+        model  = ArticleSectoriel
+        fields = [
+            'id', 'secteur', 'date_pub', 'source', 'url', 'titre_art', 'extrait',
+            'impact_secteur', 'type_impact', 'type_impact_display',
+            'analyse_ia', 'date_collecte',
+        ]
+
 
 class DocumentTitreSerializer(serializers.ModelSerializer):
     url_fichier   = serializers.SerializerMethodField()

@@ -43,7 +43,7 @@ const INDICATEURS_DEFAUT = {
   bollinger: false, rsi: false, macd: false,
 }
 
-export default function GraphiqueTechnique({ ohlcData, ticker, loadingOhlc, periode, onChangePeriode }) {
+export default function GraphiqueTechnique({ ohlcData, ticker, loadingOhlc, periode, onChangePeriode, patterns }) {
   const containerRef   = useRef(null)
   const chartRef       = useRef(null)
   const seriesRef      = useRef({})
@@ -114,6 +114,24 @@ export default function GraphiqueTechnique({ ohlcData, ticker, loadingOhlc, peri
       })
     }
     series.candlestick.setData(ohlc)
+
+    // --- Marqueurs patterns graphiques (étape 31) ---
+    if (patterns && patterns.length > 0) {
+      const markers = patterns.flatMap(p =>
+        (p.points_cles || []).map(pt => ({
+          time: pt.time,
+          position: p.direction === 'baissier' ? 'aboveBar' : 'belowBar',
+          color: p.direction === 'haussier' ? THEME.haussier : p.direction === 'baissier' ? THEME.baissier : THEME.neutre,
+          shape: p.direction === 'haussier' ? 'arrowUp' : p.direction === 'baissier' ? 'arrowDown' : 'circle',
+          text: pt.label,
+        }))
+      ).sort((a, b) => a.time.localeCompare(b.time))
+      if (markers.length > 0) {
+        series.candlestick.setMarkers(markers)
+      }
+    } else {
+      series.candlestick.setMarkers([])
+    }
 
     // --- Volume (histogramme en bas des chandeliers) ---
     if (!series.volume) {

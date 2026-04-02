@@ -59,7 +59,9 @@ echo "[3/9] Préparation du répertoire..."
 
 mkdir -p $APPDIR/logs
 mkdir -p $APPDIR/staticfiles
-mkdir -p $APPDIR/media
+mkdir -p $APPDIR/media/documents
+chown -R $USER:$USER $APPDIR/logs $APPDIR/media
+chmod -R 755 $APPDIR/logs $APPDIR/media
 
 # Cloner ou mettre à jour le dépôt
 if [ -d "$APPDIR/.git" ]; then
@@ -180,6 +182,7 @@ cat > /etc/nginx/sites-available/pea << EOF
 server {
     listen 80;
     server_name $DOMAINE;
+    client_max_body_size 20M;
 
     # Frontend React (build statique)
     root $APPDIR/frontend/build;

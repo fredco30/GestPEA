@@ -784,3 +784,43 @@ class DocumentDetailView(APIView):
             doc.fichier.delete(save=False)
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# -----------------------------------------------------------------------
+# Patterns graphiques (étape 31)
+# -----------------------------------------------------------------------
+
+class PatternListView(APIView):
+    """GET /api/titres/<ticker>/patterns/ — patterns graphiques détectés."""
+
+    def get(self, request, ticker):
+        from app.models import PatternDetecte
+        from app.api.serializers import PatternDetecteSerializer
+
+        statut = request.query_params.get('statut')
+        qs = PatternDetecte.objects.filter(titre__ticker=ticker)
+        if statut:
+            qs = qs.filter(statut=statut)
+        qs = qs.order_by('-date_detection')[:10]
+        return Response(PatternDetecteSerializer(qs, many=True).data)
+
+
+# -----------------------------------------------------------------------
+# Veille sectorielle (étape 35)
+# -----------------------------------------------------------------------
+
+class VeilleSectorielleView(APIView):
+    """GET /api/veille-sectorielle/ — articles sectoriels avec impact IA."""
+
+    def get(self, request):
+        from app.models import ArticleSectoriel
+        from app.api.serializers import ArticleSectorielSerializer
+
+        secteur = request.query_params.get('secteur')
+        limit = int(request.query_params.get('limit', 20))
+
+        qs = ArticleSectoriel.objects.all()
+        if secteur:
+            qs = qs.filter(secteur=secteur)
+        qs = qs.order_by('-date_pub')[:limit]
+        return Response(ArticleSectorielSerializer(qs, many=True).data)

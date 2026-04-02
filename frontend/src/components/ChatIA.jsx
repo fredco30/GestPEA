@@ -19,18 +19,17 @@ const STYLES = {
     position: 'fixed',
     bottom: 24,
     right: 24,
-    width: 52,
-    height: 52,
+    width: 80,
+    height: 80,
     borderRadius: '50%',
-    background: 'var(--color-accent, #6366f1)',
-    color: '#fff',
+    background: 'transparent',
     border: 'none',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 22,
-    boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+    padding: 0,
+    boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
     zIndex: 1000,
     transition: 'transform 0.2s',
   },
@@ -38,10 +37,10 @@ const STYLES = {
   // Panel chat
   panel: {
     position: 'fixed',
-    bottom: 86,
+    bottom: 116,
     right: 24,
-    width: 380,
-    maxHeight: 520,
+    width: 520,
+    maxHeight: 680,
     borderRadius: 'var(--border-radius-xl, 16px)',
     background: 'var(--color-background-primary)',
     border: '0.5px solid var(--color-border-tertiary)',
@@ -83,20 +82,20 @@ const STYLES = {
   messagesArea: {
     flex: 1,
     overflowY: 'auto',
-    padding: '12px 14px',
+    padding: '14px 18px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-    minHeight: 200,
-    maxHeight: 360,
+    gap: 12,
+    minHeight: 300,
+    maxHeight: 520,
   },
   msgUser: {
     alignSelf: 'flex-end',
     background: 'var(--color-accent, #6366f1)',
     color: '#fff',
-    padding: '8px 12px',
+    padding: '10px 14px',
     borderRadius: '14px 14px 4px 14px',
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 1.5,
     maxWidth: '85%',
     wordBreak: 'break-word',
@@ -105,9 +104,9 @@ const STYLES = {
     alignSelf: 'flex-start',
     background: 'var(--color-background-secondary)',
     color: 'var(--color-text-primary)',
-    padding: '8px 12px',
+    padding: '10px 14px',
     borderRadius: '14px 14px 14px 4px',
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 1.6,
     maxWidth: '85%',
     wordBreak: 'break-word',
@@ -246,7 +245,7 @@ export default function ChatIA({ ticker }) {
         onClick={() => setOpen(o => !o)}
         title="Chat IA"
       >
-        {open ? '\u2715' : '\uD83D\uDCAC'}
+        <img src="/chatbot.png" alt="Chat IA" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
       </button>
 
       {/* Panel */}
@@ -254,9 +253,12 @@ export default function ChatIA({ ticker }) {
         <div style={STYLES.panel}>
           {/* Header */}
           <div style={STYLES.header}>
-            <div>
-              <span style={STYLES.headerTitle}>Chat IA</span>
-              {ticker && <span style={STYLES.headerTicker}>{ticker}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <img src="/chatbot.png" alt="IA" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+              <div>
+                <span style={STYLES.headerTitle}>Assistant IA</span>
+                {ticker && <span style={STYLES.headerTicker}>{ticker}</span>}
+              </div>
             </div>
             <button style={STYLES.closeBtn} onClick={() => setOpen(false)}>{'\u2715'}</button>
           </div>
@@ -270,17 +272,27 @@ export default function ChatIA({ ticker }) {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i}>
-                <div style={msg.role === 'user' ? STYLES.msgUser : STYLES.msgBot}>
-                  {msg.content}
-                </div>
-                {msg.disclaimer && (
-                  <div style={STYLES.disclaimer}>{msg.disclaimer}</div>
+              <div key={i} style={msg.role === 'bot' ? { display: 'flex', alignItems: 'flex-start', gap: 8 } : {}}>
+                {msg.role === 'bot' && (
+                  <img src="/chatbot.png" alt="IA" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, marginTop: 2 }} />
                 )}
+                <div>
+                  <div style={msg.role === 'user' ? STYLES.msgUser : STYLES.msgBot}>
+                    {msg.content}
+                  </div>
+                  {msg.disclaimer && (
+                    <div style={STYLES.disclaimer}>{msg.disclaimer}</div>
+                  )}
+                </div>
               </div>
             ))}
 
-            {loading && <div style={STYLES.typing}>L'IA reflechit...</div>}
+            {loading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <img src="/chatbot.png" alt="IA" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                <div style={STYLES.typing}>réfléchit...</div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
