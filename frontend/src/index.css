@@ -77,11 +77,6 @@ button { font-family: inherit; }
     display: block;
   }
 
-  /* Bouton hamburger */
-  .hamburger-btn {
-    display: flex !important;
-  }
-
   /* Main : pleine largeur + padding réduit */
   .main-content {
     padding: 12px 10px !important;
@@ -125,15 +120,18 @@ button { font-family: inherit; }
     padding: 4px 8px !important;
     font-size: 11px !important;
   }
+
+  /* Hamburger : visible sur mobile */
+  .hamburger-btn {
+    display: flex !important;
+  }
 }
 
-/* Hamburger : caché par défaut sur desktop */
-.hamburger-btn {
-  display: none !important;
-}
-
-/* Classes utilitaires pour les media queries (appliquées dans le JSX) */
+/* Hamburger : caché sur desktop (doit être DANS un media query pour ne pas écraser le mobile) */
 @media (min-width: 769px) {
+  .hamburger-btn {
+    display: none !important;
+  }
   .sidebar-mobile { transform: none !important; }
   .sidebar-overlay { display: none !important; }
 }
