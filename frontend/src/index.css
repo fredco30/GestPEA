@@ -77,9 +77,16 @@ button { font-family: inherit; }
     display: block;
   }
 
-  /* Main : pleine largeur + padding réduit */
+  /* Main : pleine largeur + padding réduit + pas de scroll horizontal */
   .main-content {
     padding: 12px 10px !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Empêcher tout débordement horizontal */
+  body, #root {
+    overflow-x: hidden;
+    max-width: 100vw;
   }
 
   /* Grilles 2 colonnes → 1 colonne */
