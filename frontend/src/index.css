@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { overflow-x: hidden; max-width: 100vw; }
 body { font-family: var(--font-sans); font-size: 16px; color: var(--color-text-primary); background: var(--color-background-tertiary); }
 button { font-family: inherit; }
 
@@ -80,13 +81,6 @@ button { font-family: inherit; }
   /* Main : pleine largeur + padding réduit + pas de scroll horizontal */
   .main-content {
     padding: 12px 10px !important;
-    overflow-x: hidden !important;
-  }
-
-  /* Empêcher tout débordement horizontal */
-  body, #root {
-    overflow-x: hidden;
-    max-width: 100vw;
   }
 
   /* Grilles 2 colonnes → 1 colonne */
