@@ -287,6 +287,46 @@ class TitreViewSet(ViewSet):
             'ticker':  titre.ticker,
         })
 
+    @action(detail=True, methods=['post'], url_path='refresh')
+    def refresh(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/refresh/
+        Rafraichit le cours en temps reel via yfinance (gratuit, 0 quota).
+        Appele automatiquement par le frontend a chaque chargement de fiche.
+        Retourne le dernier cours mis a jour.
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+
+        try:
+            from app.services.yfinance_client import YFinanceClient
+            client = YFinanceClient()
+            result = client.maj_cours_batch([titre.ticker], jours=5)
+
+            dernier = titre.prix_journaliers.order_by('-date').first()
+            return Response({
+                'ticker': titre.ticker,
+                'source': 'yfinance',
+                'ok': titre.ticker in result.get('ok', []),
+                'dernier_cours': {
+                    'date':            str(dernier.date) if dernier else None,
+                    'ouverture':       float(dernier.ouverture) if dernier else None,
+                    'haut':            float(dernier.haut) if dernier else None,
+                    'bas':             float(dernier.bas) if dernier else None,
+                    'cloture':         float(dernier.cloture) if dernier else None,
+                    'cloture_veille':  float(dernier.cloture_veille) if dernier and dernier.cloture_veille else None,
+                    'volume':          dernier.volume if dernier else None,
+                    'variation_veille_pct': dernier.variation_veille_pct if dernier else None,
+                } if dernier else None,
+            })
+        except Exception as e:
+            logger.error(f"[API] refresh {pk} : {e}")
+            return Response({
+                'ticker': pk.upper(),
+                'source': 'yfinance',
+                'ok': False,
+                'erreur': str(e),
+            })
+
     @action(detail=True, methods=['post'], url_path='analyser')
     def analyser(self, request, pk=None):
         """

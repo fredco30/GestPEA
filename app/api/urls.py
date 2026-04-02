@@ -28,6 +28,10 @@ urlpatterns = [
          views.TitreViewSet.as_view({'post': 'importer'}),
          name='titre-importer'),
 
+    path('titres/<str:pk>/refresh/',
+         views.TitreViewSet.as_view({'post': 'refresh'}),
+         name='titre-refresh'),
+
     path('titres/<str:pk>/config/',
          views.TitreViewSet.as_view({'get': 'config_alertes', 'patch': 'config_alertes'}),
          name='titre-config'),
