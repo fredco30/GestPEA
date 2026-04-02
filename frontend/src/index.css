@@ -46,3 +46,94 @@ button { font-family: inherit; }
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
 }
+
+/* -------------------------------------------------------
+   RESPONSIVE MOBILE (< 768px)
+   Ne s'active que sur petit écran — zéro impact desktop
+   ------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  /* Sidebar : cachée par défaut, overlay quand ouverte */
+  .sidebar-mobile {
+    position: fixed !important;
+    top: 0; left: 0; bottom: 0;
+    width: 280px !important;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+  .sidebar-mobile.open {
+    transform: translateX(0);
+  }
+
+  /* Overlay sombre derrière la sidebar */
+  .sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+  }
+  .sidebar-overlay.open {
+    display: block;
+  }
+
+  /* Bouton hamburger */
+  .hamburger-btn {
+    display: flex !important;
+  }
+
+  /* Main : pleine largeur + padding réduit */
+  .main-content {
+    padding: 12px 10px !important;
+  }
+
+  /* Grilles 2 colonnes → 1 colonne */
+  .grid-2-cols {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Fondamentaux : 4 cols → 2 cols sur mobile */
+  .grid-fondamentaux {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* En-tête titre : wrap les éléments */
+  .entete-ligne1 {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  .entete-ligne1 .cours-principal {
+    font-size: 22px !important;
+  }
+  .entete-ligne1 .ohlv-mini {
+    width: 100%;
+    order: 10;
+  }
+
+  /* Pills indicateurs : scroll horizontal */
+  .pills-row {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+  .pills-row::-webkit-scrollbar { display: none; }
+
+  /* Boutons période graphique : plus petits */
+  .periode-btn {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+}
+
+/* Hamburger : caché par défaut sur desktop */
+.hamburger-btn {
+  display: none !important;
+}
+
+/* Classes utilitaires pour les media queries (appliquées dans le JSX) */
+@media (min-width: 769px) {
+  .sidebar-mobile { transform: none !important; }
+  .sidebar-overlay { display: none !important; }
+}

@@ -105,7 +105,7 @@ export default function FicheTitre({ ticker }) {
       )}
 
       {/* ---- Grille inférieure : sentiment + news ---- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
+      <div className="grid-2-cols" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
         <CarteSignaux
           signaux={titre.signaux_actifs}
           sentiments30j={titre.sentiments_30j}
@@ -195,7 +195,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
     }}>
 
       {/* === LIGNE 1 : identité · cours · conviction · actions === */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div className="entete-ligne1" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
 
         {/* Identité */}
         <div style={{ lineHeight: 1.25 }}>
@@ -213,7 +213,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
         {/* Cours + variation vs veille */}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          <span className="cours-principal" style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {dernier
               ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
               : '—'}
@@ -234,7 +234,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
         {/* Mini OHLV du jour */}
         {dernier?.ouverture != null && (
-          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--color-text-tertiary)', alignItems: 'center' }}>
+          <div className="ohlv-mini" style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--color-text-tertiary)', alignItems: 'center' }}>
             <span>O <strong style={{ color: 'var(--color-text-secondary)' }}>{Number(dernier.ouverture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
             <span>H <strong style={{ color: 'var(--color-text-success)' }}>{Number(dernier.haut).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
             <span>B <strong style={{ color: 'var(--color-text-danger)' }}>{Number(dernier.bas).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
@@ -294,7 +294,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
       </div>
 
       {/* === LIGNE 2 : pills indicateurs + position === */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="pills-row" style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
 
         <PillMetrique
           label="RSI"
@@ -570,7 +570,7 @@ function CarteFondamentaux({ fond }) {
       </button>
 
       {ouvert && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8, marginTop: 12 }}>
+        <div className="grid-fondamentaux" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8, marginTop: 12 }}>
           {[
             { label: 'PER', valeur: fond.per?.toFixed(1) },
             { label: 'PER Forward', valeur: fond.per_forward?.toFixed(1) },
