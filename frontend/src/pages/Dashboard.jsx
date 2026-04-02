@@ -450,13 +450,20 @@ function NavTitre({ titre, actif, onClick, onSupprimer, onChangerStatut, labelSt
           }}>
             {titre.nom_court || titre.ticker}
           </div>
-          <div style={{
-            fontSize: 12,
-            color: titre.variation_jour >= 0 ? SB.success : SB.danger,
-          }}>
-            {titre.variation_jour != null
-              ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
-              : '\u2014'}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            {titre.dernier_cours?.cloture != null && (
+              <span style={{ fontSize: 11, color: SB.textSecondary }}>
+                {Number(titre.dernier_cours.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+              </span>
+            )}
+            <span style={{
+              fontSize: 11,
+              color: titre.variation_jour >= 0 ? SB.success : SB.danger,
+            }}>
+              {titre.variation_jour != null
+                ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
+                : '\u2014'}
+            </span>
           </div>
         </div>
 

@@ -211,22 +211,38 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
         <div style={{ width: 1, height: 32, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
 
-        {/* Cours + variation */}
+        {/* Cours + variation vs veille */}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {dernier
               ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
               : '—'}
           </span>
-          {dernier?.variation_pct != null && (
-            <span style={{
-              fontSize: 16, fontWeight: 500,
-              color: dernier.variation_pct >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
-            }}>
-              {dernier.variation_pct >= 0 ? '+' : ''}{dernier.variation_pct.toFixed(2)}%
-            </span>
-          )}
+          {(() => {
+            const varPct = dernier?.variation_veille_pct ?? dernier?.variation_pct
+            if (varPct == null) return null
+            return (
+              <span style={{
+                fontSize: 16, fontWeight: 500,
+                color: varPct >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
+              }}>
+                {varPct >= 0 ? '+' : ''}{varPct.toFixed(2)}%
+              </span>
+            )
+          })()}
         </div>
+
+        {/* Mini OHLV du jour */}
+        {dernier?.ouverture != null && (
+          <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--color-text-tertiary)', alignItems: 'center' }}>
+            <span>O <strong style={{ color: 'var(--color-text-secondary)' }}>{Number(dernier.ouverture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
+            <span>H <strong style={{ color: 'var(--color-text-success)' }}>{Number(dernier.haut).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
+            <span>B <strong style={{ color: 'var(--color-text-danger)' }}>{Number(dernier.bas).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</strong></span>
+            {dernier.volume != null && (
+              <span>Vol <strong style={{ color: 'var(--color-text-secondary)' }}>{formatVolume(dernier.volume)}</strong></span>
+            )}
+          </div>
+        )}
 
         {/* Mini jauge conviction (cliquable) */}
         {titre.score_conviction != null && (
@@ -294,6 +310,13 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
             ? (Number(dernier.macd_hist) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)')
             : undefined}
         />
+        {dernier?.amplitude_pct != null && (
+          <PillMetrique
+            label="Amplitude"
+            valeur={`${dernier.amplitude_pct.toFixed(1)}%`}
+            couleur={dernier.amplitude_pct > 3 ? 'var(--color-text-warning)' : undefined}
+          />
+        )}
         <PillMetrique
           label="MM50 vs prix"
           valeur={dernier?.mm_50 && dernier?.cloture
@@ -598,6 +621,14 @@ function getRsiCouleur(rsi) {
   if (rsi < 40) return 'var(--color-text-success)'
   if (rsi > 65) return 'var(--color-text-danger)'
   return 'var(--color-text-warning)'
+}
+
+function formatVolume(vol) {
+  if (vol == null) return '—'
+  if (vol >= 1e9) return `${(vol / 1e9).toFixed(1)}G`
+  if (vol >= 1e6) return `${(vol / 1e6).toFixed(1)}M`
+  if (vol >= 1e3) return `${(vol / 1e3).toFixed(0)}k`
+  return vol.toLocaleString('fr-FR')
 }
 
 function getEcartMmCouleur(dernier) {
