@@ -817,17 +817,19 @@ def update_eligibles_pea_task(self):
 def analyse_complete_task(self, ticker: str):
     """
     Analyse complète d'un titre nouvellement ajouté :
-      1. Import historique OHLCV (EODHD)
+      1. Import historique OHLCV (yfinance → fallback EODHD)
       2. Calcul indicateurs techniques
-      3. Collecte news toutes sources (historique 1 an)
-      4. Scoring sentiment articles (Mistral)
-      5. Sentiment mixte + rapport IA
+      3. Fondamentaux (EODHD + FMP)
+      4. Collecte news toutes sources (historique 1 an)
+      5. Scoring sentiment articles (Mistral)
+      6. Sentiment mixte + rapport IA
+      7. Détection signaux + confluence
+      8. Score de conviction IA
     """
     import os
     os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
 
     from app.models import Article, Titre
-    from app.services.eodhd import EODHDClient
 
     try:
         titre = Titre.objects.get(ticker=ticker)
@@ -837,15 +839,30 @@ def analyse_complete_task(self, ticker: str):
 
     resultats = {'ticker': ticker}
 
-    # 1. Import historique OHLCV
+    # 1. Import historique OHLCV (yfinance en priorité, 0 quota)
     try:
-        client = EODHDClient()
-        nb = client.import_historique_bulk(ticker)
+        from app.services.yfinance_client import YFinanceClient
+        yf_client = YFinanceClient()
+        nb = yf_client.import_historique(ticker)
         resultats['bougies'] = nb
-        logger.info(f"[Task] analyse_complete {ticker} : {nb} bougies importées")
+        resultats['source_cours'] = 'yfinance'
+        logger.info(f"[Task] analyse_complete {ticker} : {nb} bougies via yfinance")
     except Exception as e:
-        logger.error(f"[Task] analyse_complete {ticker} import : {e}")
-        resultats['bougies'] = 0
+        logger.warning(f"[Task] analyse_complete {ticker} yfinance échoué : {e}")
+        nb = 0
+
+    # Fallback EODHD si yfinance n'a rien retourné
+    if nb == 0:
+        try:
+            from app.services.eodhd import EODHDClient
+            client = EODHDClient()
+            nb = client.import_historique_bulk(ticker)
+            resultats['bougies'] = nb
+            resultats['source_cours'] = 'eodhd'
+            logger.info(f"[Task] analyse_complete {ticker} : {nb} bougies via EODHD")
+        except Exception as e:
+            logger.error(f"[Task] analyse_complete {ticker} import : {e}")
+            resultats['bougies'] = 0
 
     # 2. Indicateurs techniques
     try:
@@ -856,7 +873,27 @@ def analyse_complete_task(self, ticker: str):
         logger.error(f"[Task] analyse_complete {ticker} indicateurs : {e}")
         resultats['indicateurs'] = str(e)
 
-    # 3. Collecte news toutes sources (historique 1 an)
+    # 3. Fondamentaux (EODHD + FMP)
+    try:
+        from app.services.eodhd import EODHDClient
+        eodhd = EODHDClient()
+        fond = eodhd.maj_fondamentaux(ticker)
+        resultats['fondamentaux_eodhd'] = 'ok' if fond else 'skip'
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} fondamentaux EODHD : {e}")
+        resultats['fondamentaux_eodhd'] = str(e)
+
+    try:
+        from django.conf import settings
+        if settings.FMP_API_KEY:
+            from app.services.fmp import FMPClient
+            fmp = FMPClient()
+            fond_fmp = fmp.maj_fondamentaux(ticker)
+            resultats['fondamentaux_fmp'] = 'ok' if fond_fmp else 'skip'
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} fondamentaux FMP : {e}")
+
+    # 4. Collecte news toutes sources (historique 1 an)
     nb_articles = 0
 
     # NewsAPI (7 jours max en gratuit)
@@ -889,7 +926,7 @@ def analyse_complete_task(self, ticker: str):
 
     resultats['articles'] = nb_articles
 
-    # 4. Scoring sentiment
+    # 5. Scoring sentiment
     try:
         ids = list(
             Article.objects.filter(titre=titre, score_sentiment__isnull=True)
@@ -902,13 +939,31 @@ def analyse_complete_task(self, ticker: str):
     except Exception as e:
         logger.error(f"[Task] analyse_complete {ticker} scoring : {e}")
 
-    # 5. Sentiment mixte + rapport IA
+    # 6. Sentiment mixte + rapport IA
     try:
         from app.services.scoring_llm import generer_sentiment_mixte
         generer_sentiment_mixte(ticker)
         resultats['sentiment'] = 'ok'
     except Exception as e:
         logger.error(f"[Task] analyse_complete {ticker} sentiment : {e}")
+
+    # 7. Analyse fondamentale IA
+    try:
+        from app.services.scoring_llm import generer_analyse_fondamentale
+        generer_analyse_fondamentale(ticker)
+        resultats['analyse_fondamentale'] = 'ok'
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} analyse fondamentale : {e}")
+        resultats['analyse_fondamentale'] = str(e)
+
+    # 8. Score de conviction IA
+    try:
+        from app.services.conviction import calculer_score_conviction
+        conv = calculer_score_conviction(ticker)
+        resultats['conviction'] = conv.get('score') if conv else None
+    except Exception as e:
+        logger.error(f"[Task] analyse_complete {ticker} conviction : {e}")
+        resultats['conviction'] = str(e)
 
     logger.info(f"[Task] analyse_complete {ticker} terminée : {resultats}")
     return resultats
