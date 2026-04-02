@@ -504,11 +504,13 @@ class SentimentView(APIView):
         # Dernier score global
         dernier_global = scores_global.order_by('-date').first()
 
-        # Articles recents scores
+        # Articles recents scores (hors articles non pertinents)
         articles = Article.objects.filter(
             titre=titre,
             date_pub__date__gte=depuis,
             score_sentiment__isnull=False,
+        ).exclude(
+            tags__contains=["hors_sujet"]
         ).order_by('-date_pub')[:20]
 
         # Topics les plus frequents
@@ -568,14 +570,20 @@ class DashboardView(APIView):
             vp = t.valeur_position
             if vp:
                 valeur_totale += Decimal(str(vp))
-            # Variation du jour
+            # Variation du jour : utiliser cloture_veille si disponible (plus fiable)
             derniere = t.prix_journaliers.order_by('-date').first()
-            # FIX: utiliser [1:2].first() correctement — c'est deja correct ici
-            avant_hier = t.prix_journaliers.order_by('-date')[1:2].first()
-            if derniere and avant_hier and t.nb_actions:
-                variation_totale += (
-                    Decimal(str(derniere.cloture)) - Decimal(str(avant_hier.cloture))
-                ) * t.nb_actions
+            if derniere and t.nb_actions:
+                if derniere.cloture_veille:
+                    variation_totale += (
+                        Decimal(str(derniere.cloture)) - Decimal(str(derniere.cloture_veille))
+                    ) * t.nb_actions
+                else:
+                    # Fallback : comparer avec la bougie précédente
+                    avant_hier = t.prix_journaliers.order_by('-date')[1:2].first()
+                    if avant_hier:
+                        variation_totale += (
+                            Decimal(str(derniere.cloture)) - Decimal(str(avant_hier.cloture))
+                        ) * t.nb_actions
 
         # Alertes
         alertes_nouvelles = Alerte.objects.filter(statut='nouvelle')

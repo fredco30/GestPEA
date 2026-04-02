@@ -180,6 +180,8 @@ class EODHDClient:
         À appeler UNE SEULE FOIS à l'ajout d'un titre.
         Les appels suivants utilisent maj_cours_du_jour (1 bougie/jour).
 
+        Stocke aussi cloture_veille (clôture du jour précédent) pour chaque bougie.
+
         Coût quota : 1 requête.
         Returns : nombre de bougies créées en base.
         """
@@ -191,19 +193,20 @@ class EODHDClient:
             logger.warning("Aucune donnée OHLCV pour %s", ticker)
             return 0
 
+        # Trier par date chronologique pour chaîner cloture_veille
+        donnees_triees = sorted(donnees, key=lambda x: x.get("date", ""))
+
         dates_existantes = set(
             PrixJournalier.objects.filter(titre=titre_obj)
             .values_list("date", flat=True)
         )
 
         a_creer = []
-        for row in donnees:
+        prev_cloture = None
+        for row in donnees_triees:
             try:
                 d = date.fromisoformat(row["date"])
             except (KeyError, ValueError):
-                continue
-
-            if d in dates_existantes:
                 continue
 
             # EODHD fournit adjusted_close (ajusté splits/dividendes) — à privilégier
@@ -214,17 +217,22 @@ class EODHDClient:
 
             # Skip rows with missing required OHLC fields
             if any(v is None for v in (ouverture, haut, bas, cloture)):
+                prev_cloture = cloture  # garder pour la bougie suivante
                 continue
 
-            a_creer.append(PrixJournalier(
-                titre     = titre_obj,
-                date      = d,
-                ouverture = ouverture,
-                haut      = haut,
-                bas       = bas,
-                cloture   = cloture,
-                volume    = self._int(row.get("volume"), 0),
-            ))
+            if d not in dates_existantes:
+                a_creer.append(PrixJournalier(
+                    titre          = titre_obj,
+                    date           = d,
+                    ouverture      = ouverture,
+                    haut           = haut,
+                    bas            = bas,
+                    cloture        = cloture,
+                    cloture_veille = prev_cloture,
+                    volume         = self._int(row.get("volume"), 0),
+                ))
+
+            prev_cloture = cloture
 
         if a_creer:
             with transaction.atomic():
@@ -235,51 +243,72 @@ class EODHDClient:
 
     def maj_cours_du_jour(self, ticker: str) -> Optional[PrixJournalier]:
         """
-        Met à jour la bougie du jour après clôture (tâche soir 18h30).
+        Met à jour les bougies récentes après clôture (tâche soir 18h30).
         Récupère les 5 derniers jours comme filet de sécurité
         (jours fériés, retards de publication).
 
+        Traite TOUTES les bougies de la fenêtre (pas seulement la dernière)
+        pour rattraper d'éventuels jours manquants.
+        Stocke aussi cloture_veille pour calcul de la variation vs veille.
+
         Coût quota : 1 requête.
-        Returns : PrixJournalier créé/mis à jour, ou None si marché fermé.
+        Returns : PrixJournalier le plus récent créé/mis à jour, ou None si marché fermé.
         """
         if date.today().weekday() >= 5:
             logger.debug("Week-end — pas de mise à jour cours pour %s", ticker)
             return None
 
         titre_obj = Titre.objects.get(ticker=ticker)
-        depuis    = date.today() - timedelta(days=5)
+        depuis    = date.today() - timedelta(days=7)  # 7j pour avoir la veille du J-5
         donnees   = self.get_cours_eod(ticker, depuis=depuis, jusqu=date.today())
 
         if not donnees:
             return None
 
-        derniere = sorted(donnees, key=lambda x: x["date"])[-1]
-        d        = date.fromisoformat(derniere["date"])
-        cloture  = (self._dec(derniere.get("adjusted_close"))
-                    or self._dec(derniere.get("close")))
-        ouverture = self._dec(derniere.get("open"))
-        haut = self._dec(derniere.get("high"))
-        bas = self._dec(derniere.get("low"))
+        # Trier par date chronologique
+        donnees_triees = sorted(donnees, key=lambda x: x["date"])
 
-        if any(v is None for v in (ouverture, haut, bas, cloture)):
-            logger.warning("Données OHLC incomplètes pour %s le %s", ticker, d)
-            return None
+        dernier_obj = None
+        for i, row in enumerate(donnees_triees):
+            try:
+                d = date.fromisoformat(row["date"])
+            except (KeyError, ValueError):
+                continue
 
-        obj, created = PrixJournalier.objects.update_or_create(
-            titre = titre_obj,
-            date  = d,
-            defaults={
-                "ouverture": ouverture,
-                "haut":      haut,
-                "bas":       bas,
-                "cloture":   cloture,
-                "volume":    self._int(derniere.get("volume"), 0),
-            }
-        )
+            cloture   = self._dec(row.get("adjusted_close")) or self._dec(row.get("close"))
+            ouverture = self._dec(row.get("open"))
+            haut      = self._dec(row.get("high"))
+            bas       = self._dec(row.get("low"))
 
-        logger.info("Cours %s %s %s — clôture=%s",
-                    ticker, d, "créé" if created else "màj", obj.cloture)
-        return obj
+            if any(v is None for v in (ouverture, haut, bas, cloture)):
+                continue
+
+            # Clôture veille : bougie précédente dans la réponse API
+            cloture_veille = None
+            if i > 0:
+                prev = donnees_triees[i - 1]
+                cloture_veille = (self._dec(prev.get("adjusted_close"))
+                                  or self._dec(prev.get("close")))
+
+            obj, created = PrixJournalier.objects.update_or_create(
+                titre = titre_obj,
+                date  = d,
+                defaults={
+                    "ouverture":      ouverture,
+                    "haut":           haut,
+                    "bas":            bas,
+                    "cloture":        cloture,
+                    "cloture_veille": cloture_veille,
+                    "volume":         self._int(row.get("volume"), 0),
+                }
+            )
+            dernier_obj = obj
+
+        if dernier_obj:
+            logger.info("Cours %s : %d bougies traitées — dernière=%s clôture=%s",
+                        ticker, len(donnees_triees), dernier_obj.date, dernier_obj.cloture)
+
+        return dernier_obj
 
     # -------------------------------------------------------------------
     # 2. FONDAMENTAUX

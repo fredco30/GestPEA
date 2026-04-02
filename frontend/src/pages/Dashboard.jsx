@@ -102,12 +102,13 @@ const ONGLETS_NAV = [
 // ---------------------------------------------------------------------------
 
 export default function Dashboard() {
-  const [onglet,      setOnglet]      = useState('surveillance')
-  const [tickerActif, setTickerActif] = useState(null)
-  const [titresPf,    setTitresPf]    = useState([])
-  const [titresSv,    setTitresSv]    = useState([])
-  const [dashboard,   setDashboard]   = useState(null)
-  const [loading,     setLoading]     = useState(true)
+  const [onglet,        setOnglet]        = useState('surveillance')
+  const [tickerActif,   setTickerActif]   = useState(null)
+  const [titresPf,      setTitresPf]      = useState([])
+  const [titresSv,      setTitresSv]      = useState([])
+  const [dashboard,     setDashboard]     = useState(null)
+  const [loading,       setLoading]       = useState(true)
+  const [sidebarOpen,   setSidebarOpen]   = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -153,13 +154,22 @@ export default function Dashboard() {
 
   if (loading) return <EcranChargement />
 
+  const closeSidebar = () => setSidebarOpen(false)
+  const handleNavClick = (callback) => {
+    callback()
+    setSidebarOpen(false)
+  }
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--color-background-tertiary)' }}>
+
+      {/* Overlay sombre mobile */}
+      <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={closeSidebar} />
 
       {/* ================================================================ */}
       {/* SIDEBAR GLASSMORPHISM                                            */}
       {/* ================================================================ */}
-      <aside style={{
+      <aside className={`sidebar-mobile ${sidebarOpen ? 'open' : ''}`} style={{
         width: 290, flexShrink: 0,
         background: SB.bg,
         display: 'flex', flexDirection: 'column',
@@ -237,12 +247,12 @@ export default function Dashboard() {
                 actif={onglet === o.id}
                 badge={o.id === 'alertes' && dashboard?.nb_alertes_nouvelles > 0
                   ? dashboard.nb_alertes_nouvelles : null}
-                onClick={() => {
+                onClick={() => handleNavClick(() => {
                   setOnglet(o.id)
                   if (o.id === 'portefeuille' && titresPf.length > 0) setTickerActif(titresPf[0].ticker)
                   if (o.id === 'surveillance' && titresSv.length > 0) setTickerActif(titresSv[0].ticker)
                   if (o.id === 'alertes') setTickerActif(null)
-                }}
+                })}
               />
             ))}
 
@@ -259,11 +269,11 @@ export default function Dashboard() {
             </div>
 
             <SidebarNavItem icon={ICONS.axo} label="Alertes Axo" actif={onglet === 'alertes_ia'}
-              onClick={() => { setOnglet('alertes_ia'); setTickerActif(null) }} />
+              onClick={() => handleNavClick(() => { setOnglet('alertes_ia'); setTickerActif(null) })} />
             <SidebarNavItem icon={ICONS.performance} label="Performance PEA" actif={onglet === 'performance'}
-              onClick={() => { setOnglet('performance'); setTickerActif(null) }} />
+              onClick={() => handleNavClick(() => { setOnglet('performance'); setTickerActif(null) })} />
             <SidebarNavItem icon={ICONS.news} label="Actualités" actif={onglet === 'actualites'}
-              onClick={() => { setOnglet('actualites'); setTickerActif(null) }} />
+              onClick={() => handleNavClick(() => { setOnglet('actualites'); setTickerActif(null) })} />
 
             {/* === TITRES (selon onglet) === */}
             {onglet === 'portefeuille' && titresPf.length > 0 && (
@@ -271,7 +281,7 @@ export default function Dashboard() {
                 <SectionLabel label="Portefeuille" />
                 {titresPf.map(t => (
                   <NavTitre key={t.ticker} titre={t} actif={tickerActif === t.ticker}
-                    onClick={() => setTickerActif(t.ticker)}
+                    onClick={() => handleNavClick(() => setTickerActif(t.ticker))}
                     onSupprimer={() => supprimerTitre(t.ticker)}
                     onChangerStatut={() => changerStatut(t.ticker, 'surveillance')}
                     labelStatut="vers Surveillance"
@@ -284,7 +294,7 @@ export default function Dashboard() {
                 <SectionLabel label="Surveillance" />
                 {titresSv.map(t => (
                   <NavTitre key={t.ticker} titre={t} actif={tickerActif === t.ticker}
-                    onClick={() => setTickerActif(t.ticker)}
+                    onClick={() => handleNavClick(() => setTickerActif(t.ticker))}
                     onSupprimer={() => supprimerTitre(t.ticker)}
                     onChangerStatut={() => changerStatut(t.ticker, 'portefeuille')}
                     labelStatut="vers Portefeuille"
@@ -311,7 +321,31 @@ export default function Dashboard() {
       {/* ================================================================ */}
       {/* CONTENU PRINCIPAL                                                */}
       {/* ================================================================ */}
-      <main style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+      <main className="main-content" style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+
+        {/* Barre mobile : hamburger + nom du titre */}
+        <div className="hamburger-btn" style={{
+          alignItems: 'center', gap: 10,
+          marginBottom: 12, padding: '8px 0',
+        }}>
+          <button onClick={() => setSidebarOpen(true)} style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: '6px 8px', fontSize: 22, lineHeight: 1,
+            color: 'var(--color-text-primary)',
+          }}>
+            &#9776;
+          </button>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            GestPEA
+          </span>
+          {dashboard && (
+            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-text-secondary)' }}>
+              {dashboard.valeur_totale_portefeuille
+                ? `${Number(dashboard.valeur_totale_portefeuille).toLocaleString('fr-FR')} \u20ac`
+                : ''}
+            </span>
+          )}
+        </div>
         {(onglet === 'portefeuille' || onglet === 'surveillance') && tickerActif && (
           <FicheTitre ticker={tickerActif} />
         )}
@@ -450,13 +484,20 @@ function NavTitre({ titre, actif, onClick, onSupprimer, onChangerStatut, labelSt
           }}>
             {titre.nom_court || titre.ticker}
           </div>
-          <div style={{
-            fontSize: 12,
-            color: titre.variation_jour >= 0 ? SB.success : SB.danger,
-          }}>
-            {titre.variation_jour != null
-              ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
-              : '\u2014'}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            {titre.dernier_cours?.cloture != null && (
+              <span style={{ fontSize: 11, color: SB.textSecondary }}>
+                {Number(titre.dernier_cours.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+              </span>
+            )}
+            <span style={{
+              fontSize: 11,
+              color: titre.variation_jour >= 0 ? SB.success : SB.danger,
+            }}>
+              {titre.variation_jour != null
+                ? `${titre.variation_jour >= 0 ? '+' : ''}${titre.variation_jour.toFixed(2)}%`
+                : '\u2014'}
+            </span>
           </div>
         </div>
 

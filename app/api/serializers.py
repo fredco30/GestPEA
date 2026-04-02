@@ -24,13 +24,15 @@ from app.models import (
 
 class PrixJournalierSerializer(serializers.ModelSerializer):
     """Bougie OHLCV + indicateurs — utilisé pour le graphique Lightweight Charts."""
-    variation_pct = serializers.ReadOnlyField()
+    variation_pct       = serializers.ReadOnlyField()
+    variation_veille_pct = serializers.ReadOnlyField()
+    amplitude_pct       = serializers.ReadOnlyField()
 
     class Meta:
         model  = PrixJournalier
         fields = [
-            'date', 'ouverture', 'haut', 'bas', 'cloture', 'volume',
-            'variation_pct',
+            'date', 'ouverture', 'haut', 'bas', 'cloture', 'cloture_veille', 'volume',
+            'variation_pct', 'variation_veille_pct', 'amplitude_pct',
             # Indicateurs techniques
             'rsi_14', 'macd', 'macd_signal', 'macd_hist',
             'mm_20', 'mm_50', 'mm_200',
@@ -160,12 +162,29 @@ class TitreListSerializer(serializers.ModelSerializer):
     def get_dernier_cours(self, obj):
         p = obj.prix_journaliers.order_by('-date').first()
         if p:
-            return {'date': str(p.date), 'cloture': float(p.cloture), 'rsi_14': float(p.rsi_14) if p.rsi_14 else None}
+            return {
+                'date':            str(p.date),
+                'ouverture':       float(p.ouverture),
+                'haut':            float(p.haut),
+                'bas':             float(p.bas),
+                'cloture':         float(p.cloture),
+                'cloture_veille':  float(p.cloture_veille) if p.cloture_veille else None,
+                'volume':          p.volume,
+                'variation_pct':   p.variation_pct,
+                'variation_veille_pct': p.variation_veille_pct,
+                'amplitude_pct':   p.amplitude_pct,
+                'rsi_14':          float(p.rsi_14) if p.rsi_14 else None,
+                'macd_hist':       float(p.macd_hist) if p.macd_hist else None,
+                'mm_50':           float(p.mm_50) if p.mm_50 else None,
+            }
         return None
 
     def get_variation_jour(self, obj):
+        """Variation vs veille (standard marché) — fallback sur intraday."""
         p = obj.prix_journaliers.order_by('-date').first()
-        return p.variation_pct if p else None
+        if not p:
+            return None
+        return p.variation_veille_pct if p.variation_veille_pct is not None else p.variation_pct
 
     def get_sentiment_global(self, obj):
         s = obj.scores_sentiment.filter(source='global').order_by('-date').first()
@@ -237,9 +256,11 @@ class TitreDetailSerializer(serializers.ModelSerializer):
         return AlerteListSerializer(qs, many=True).data
 
     def get_articles_recents(self, obj):
-        """10 derniers articles scorés."""
+        """10 derniers articles scorés, hors articles non pertinents."""
         qs = obj.articles.filter(
             score_sentiment__isnull=False
+        ).exclude(
+            tags__contains=["hors_sujet"]
         ).order_by('-date_pub')[:10]
         return ArticleSerializer(qs, many=True).data
 

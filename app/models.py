@@ -112,6 +112,8 @@ class PrixJournalier(models.Model):
     haut      = models.DecimalField(max_digits=12, decimal_places=4)
     bas       = models.DecimalField(max_digits=12, decimal_places=4)
     cloture   = models.DecimalField(max_digits=12, decimal_places=4)
+    cloture_veille = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True,
+                                          help_text="Clôture J-1 pour calcul variation vs veille")
     volume    = models.BigIntegerField(default=0)
 
     # Indicateurs techniques pré-calculés (remplis par calculate_indicators)
@@ -143,9 +145,23 @@ class PrixJournalier(models.Model):
 
     @property
     def variation_pct(self):
-        """Variation % entre ouverture et clôture du jour."""
+        """Variation % entre ouverture et clôture du jour (intraday)."""
         if self.ouverture and self.ouverture != 0:
             return round(float((self.cloture - self.ouverture) / self.ouverture * 100), 2)
+        return None
+
+    @property
+    def variation_veille_pct(self):
+        """Variation % entre clôture veille et clôture du jour (standard marché)."""
+        if self.cloture_veille and self.cloture_veille != 0:
+            return round(float((self.cloture - self.cloture_veille) / self.cloture_veille * 100), 2)
+        return None
+
+    @property
+    def amplitude_pct(self):
+        """Amplitude intraday % : (haut - bas) / bas."""
+        if self.bas and self.bas != 0:
+            return round(float((self.haut - self.bas) / self.bas * 100), 2)
         return None
 
 

@@ -162,15 +162,15 @@ function ArticleItem({ article }) {
           href={article.url}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-text-primary)', textDecoration: 'none', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
         >
           {article.titre_art}
         </a>
-        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>{article.source}</span>
           <span>&middot;</span>
           <span>{new Date(article.date_pub).toLocaleDateString('fr-FR')}</span>
-          <span style={{ marginLeft: 'auto', background: bgBadge, color: colorBadge, padding: '1px 6px', borderRadius: 20, fontWeight: 500 }}>
+          <span style={{ marginLeft: 'auto', background: bgBadge, color: colorBadge, padding: '1px 6px', borderRadius: 20, fontWeight: 500, flexShrink: 0 }}>
             {score >= 0 ? '+' : ''}{score.toFixed(2)}
           </span>
         </div>
