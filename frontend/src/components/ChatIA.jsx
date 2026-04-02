@@ -178,6 +178,20 @@ const STYLES = {
 }
 
 // ---------------------------------------------------------------------------
+// Hook mobile
+// ---------------------------------------------------------------------------
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(window.innerWidth <= 768)
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return mobile
+}
+
+// ---------------------------------------------------------------------------
 // Composant
 // ---------------------------------------------------------------------------
 
@@ -187,6 +201,7 @@ export default function ChatIA({ ticker }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
+  const isMobile = useIsMobile()
 
   // Auto-scroll en bas
   useEffect(() => {
@@ -241,17 +256,29 @@ export default function ChatIA({ ticker }) {
     <>
       {/* Bouton flottant */}
       <button
-        className="chat-fab"
-        style={STYLES.fab}
+        style={{
+          ...STYLES.fab,
+          ...(isMobile ? { width: 48, height: 48, bottom: 14, right: 14 } : {}),
+        }}
         onClick={() => setOpen(o => !o)}
         title="Chat IA"
       >
-        <img src="/chatbot.png" alt="Chat IA" style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
+        <img src="/chatbot.png" alt="Chat IA" style={{
+          width: isMobile ? 48 : 64, height: isMobile ? 48 : 64,
+          borderRadius: '50%', objectFit: 'cover',
+        }} />
       </button>
 
       {/* Panel */}
       {open && (
-        <div className="mobile-chat-panel" style={STYLES.panel}>
+        <div style={isMobile ? {
+          position: 'fixed', inset: 0,
+          width: '100%', height: '100%', maxHeight: '100%',
+          borderRadius: 0,
+          background: 'var(--color-background-primary)',
+          display: 'flex', flexDirection: 'column',
+          zIndex: 1001, overflow: 'hidden',
+        } : STYLES.panel}>
           {/* Header */}
           <div style={STYLES.header}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
