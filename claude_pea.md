@@ -2,7 +2,7 @@
 
 > Fichier de référence généré et maintenu au fil des échanges avec Claude.  
 > Objectif : disposer d'un historique complet des décisions d'architecture pour lancer le codage sans avoir à tout réexpliquer.  
-> **Dernière mise à jour : 1er avril 2026 — DEPLOYE SUR VPS ✅ — Phase 1 terminée — Phase 2 IA avancée en cours**
+> **Dernière mise à jour : 3 avril 2026 — DEPLOYE SUR VPS ✅ — Phase 1 terminée — Phase 2 IA avancée en cours — Mobile responsive + PWA**
 
 ---
 
@@ -70,13 +70,13 @@ L'IA ne donne **pas de conseils d'investissement** — elle observe, mesure et s
 
 Pour chaque titre PEA détenu :
 - Sélecteur de titres en haut de page (tabs)
-- En-tête : nom, place, cours actuel, variation jour, badge sentiment
-- **Métriques clés** : RSI(14), MACD, écart MM50j, score sentiment
+- En-tête : nom, place, cours actuel, variation vs veille, O/H/B/Vol, badge sentiment, bouton ↻ Actualiser
+- **Métriques clés** : RSI(14), MACD, Amplitude, **MM20 vs prix**, MM50 vs prix, score sentiment
 - **Graphique technique** (Lightweight Charts TradingView) :
   - Chandeliers japonais OHLC
   - Indicateurs activables : MM20, MM50, Bollinger, RSI, MACD
   - Annotations IA superposées sur le graphique (marqueurs de confluence)
-  - Sélecteur de période : 1S / 1M / 3M / 1A
+  - Sélecteur de période : 1S / 1M / 3M / 6M / 1A / 3A / MAX
 - **Panneau sentiment** : barre presse, barre réseaux sociaux, signaux techniques (croisements, zones RSI, signal MACD, niveaux Bollinger)
 - **Feed actualités** : articles résumés par IA avec score de sentiment (-1 à +1) et code couleur
 
@@ -187,14 +187,24 @@ Fiabilité historique de ce pattern sur ce titre : 80%
 
 | API | Usage | Quota gratuit | Coût si upgrade |
 |---|---|---|---|
-| **EODHD** | Cours OHLC + fondamentaux EU + screener PEA + news | 20 req/jour | ~20 €/mois |
+| **yfinance** (Python lib) | **Source primaire cours OHLCV** — batch mode (1 appel pour N tickers), ~20 ans d'historique, refresh temps réel à chaque visite | Gratuit, 0 quota | — |
+| **EODHD** | Fondamentaux + screener PEA + news (fallback cours si yfinance échoue) | 20 req/jour | ~20 €/mois |
 | **FMP** (Financial Modeling Prep) | Fondamentaux complémentaires + ratios calculés + calendrier dividendes | 250 req/jour | ~15 $/mois |
 | **NewsAPI** | Presse française (Les Échos, BFM, Le Monde) | 100 req/jour | ~49 $/mois |
-| **yfinance** (Python lib) | Prototypage local uniquement — NE PAS utiliser en production | Gratuit | — |
-| **Reddit API** | Sentiment réseaux sociaux | Gratuit | — |
-| **StockTwits API** | Sentiment investisseurs retail | Gratuit | — |
+| ~~**Reddit API**~~ | ~~Sentiment réseaux sociaux~~ — **désactivé** (403 sans OAuth depuis 2024) | — | — |
 
-### Pourquoi EODHD en principal
+### Architecture des sources de données
+
+| Donnée | Source primaire | Fallback | Coût quota |
+|--------|---------------|----------|------------|
+| **Cours OHLCV** | **yfinance** (batch, temps réel) | EODHD | **0** |
+| **Import historique** | **yfinance** (~20 ans) | EODHD | **0** |
+| **Fondamentaux** | EODHD | FMP | 1 req/ticker |
+| **News** | NewsAPI + Google News RSS | EODHD | 1-2 req |
+| **Éligibilité PEA** | EODHD | — | 1 req/titre |
+| ~~Reddit~~ | Désactivé (403) | — | — |
+
+### Pourquoi EODHD pour les fondamentaux
 
 - Meilleure couverture actions européennes (Euronext Paris, Amsterdam, Bruxelles, Milan, Madrid, Xetra, LSE)
 - Screener avec champ `country` → filtre éligibilité PEA natif
@@ -215,11 +225,11 @@ Fiabilité historique de ce pattern sur ce titre : 80%
 
 | Jour | Tâches | Requêtes estimées |
 |---|---|---|
-| Lundi | Cours EOD tous titres + Fondamentaux **lot A** (50%) + News mutualisée | ~14 req |
-| Mardi | Cours EOD tous titres + Fondamentaux **lot B** (50%) + News mutualisée | ~14 req |
-| Mercredi | Cours EOD tous titres + Fondamentaux **lot A** (50%) + News mutualisée | ~14 req |
-| Jeudi | Cours EOD tous titres + Fondamentaux **lot B** (50%) + News mutualisée | ~14 req |
-| Vendredi | Cours EOD tous titres + News mutualisée + Screener PEA (1x/mois) | ~11 req |
+| Lundi | Cours EOD yfinance (0 req) + Fondamentaux **lot A** (50%) + News mutualisée | ~7 req EODHD |
+| Mardi | Cours EOD yfinance (0 req) + Fondamentaux **lot B** (50%) + News mutualisée | ~7 req EODHD |
+| Mercredi | Cours EOD yfinance (0 req) + Fondamentaux **lot A** (50%) + News mutualisée | ~7 req EODHD |
+| Jeudi | Cours EOD yfinance (0 req) + Fondamentaux **lot B** (50%) + News mutualisée | ~7 req EODHD |
+| Vendredi | Cours EOD yfinance (0 req) + News mutualisée + Screener PEA (1x/mois) | ~3 req EODHD |
 | Sam/Dim | Rien (marché fermé) | 0 req |
 
 **Lot A** = titres index pairs, **Lot B** = titres index impairs (champ `lot` en base).
@@ -274,7 +284,7 @@ Fichier : `app/models.py` — 8 modèles définis.
 | Modèle | Rôle | Clé technique |
 |---|---|---|
 | `Titre` | Référentiel des titres suivis | Champ `lot` (A/B) pour rotation Celery · champ `eligible_pea` mis à jour par screener mensuel |
-| `PrixJournalier` | OHLCV journalier + indicateurs techniques | `unique_together (titre, date)` · indicateurs pré-calculés stockés (RSI, MACD, MM20/50/200, Bollinger, volume_ratio) |
+| `PrixJournalier` | OHLCV journalier + indicateurs techniques | `unique_together (titre, date)` · `cloture_veille` pour variation vs J-1 · indicateurs pré-calculés (RSI, MACD, MM20/50/200, Bollinger, volume_ratio) · properties `variation_veille_pct`, `amplitude_pct` |
 | `Fondamentaux` | Données fondamentales trimestrielles | `score_qualite` property calculé sur 10 (ROE, dette, croissance BPA, marge, dividende) |
 | `ScoreSentiment` | Score LLM par source (presse / social / global) | Score de -1 à +1 · `label` et `couleur` properties |
 | `Article` | Articles et posts individuels scorés | Tags JSON (topics détectés) · lien vers Titre |
@@ -364,7 +374,11 @@ pea_project/
 | `fmp.py` | Client FMP (stable API) : profil, ratios TTM, métriques clés, objectif analystes | `app/services/fmp.py` |
 | `auto_fill.py` | Auto-remplissage titre : résolution ticker/ISIN/nom, métadonnées EODHD/FMP, éligibilité PEA, seuils alerte par secteur, nom court intelligent | `app/services/auto_fill.py` |
 | `rss_news.py` | Collecteur RSS : Google News (1 an historique), Boursorama, Zonebourse — gratuit, illimité | `app/services/rss_news.py` |
-| `reddit_client.py` | Collecteur Reddit : r/bourse, r/vosfinances, r/investir — API JSON publique, sans OAuth | `app/services/reddit_client.py` |
+| `reddit_client.py` | Collecteur Reddit — **désactivé** (API publique bloquée 403 depuis 2024) | `app/services/reddit_client.py` |
+| `yfinance_client.py` | Client Yahoo Finance : cours OHLCV batch (0 quota), import historique (~20 ans), refresh temps réel on-demand | `app/services/yfinance_client.py` |
+| `conviction.py` | Score de conviction IA 0-100 : technique (25%) + fondamentaux (35%) + sentiment (20%) + historique (20%) · Explication Mistral avec points d'entrée | `app/services/conviction.py` |
+| `manifest.json` | PWA manifest — installable sur écran d'accueil mobile | `frontend/public/manifest.json` |
+| `sw.js` | Service worker PWA — cache network-first | `frontend/public/sw.js` |
 
 ### Détails scoring LLM (`scoring_llm.py`)
 
@@ -382,9 +396,9 @@ pea_project/
 09h00  fetch_news_gratuites_task   RSS (Google News, Boursorama, Zonebourse) + Reddit
                                     → scorer_articles_task → generer_sentiment_mixte
 13h00  fetch_news_gratuites_task   idem (2e passage)
-18h30  fetch_cours_eod_task        1 req EODHD batch (toutes les bougies du jour)
+18h30  fetch_cours_eod_task        yfinance batch (0 quota) → fallback EODHD
 19h00  fetch_fondamentaux_lot_task  EODHD lot A/B + FMP complément
-20h00  fetch_news_task             EODHD + NewsAPI + RSS + Reddit
+20h00  fetch_news_task             EODHD + NewsAPI + RSS (Reddit désactivé)
                                     → scorer_articles_task → generer_sentiment_mixte
 21h00  run_indicateurs_task        pandas-ta en local (RSI, MACD, MM, Bollinger)
          └→ detect_signaux_task   détecte signaux techniques
@@ -396,9 +410,12 @@ Ven 19h  digest_hebdomadaire_task  synthèse semaine par Mistral
 ### Tâches déclenchées manuellement
 
 ```
-analyse_complete_task(ticker)   à la création d'un titre — import OHLCV + indicateurs
-                                + news 1 an (toutes sources) + scoring + rapport IA
-POST /api/titres/{ticker}/analyser/   bouton "Analyser IA" dans le dashboard
+analyse_complete_task(ticker)   à la création d'un titre — import OHLCV (yfinance) + indicateurs
+                                + fondamentaux (EODHD+FMP) + news 1 an + scoring + sentiment
+                                + analyse fondamentale IA + score de conviction IA
+POST /api/titres/{ticker}/actualiser/  bouton "↻ Actualiser" — cours + news + scoring + conviction
+                                pour un seul titre (~10s)
+POST /api/titres/{ticker}/refresh/   refresh cours yfinance on-demand (auto au chargement page)
 ```
 
 ---
@@ -448,13 +465,18 @@ Exploiter pleinement l'IA (Mistral) pour transformer les données brutes en aide
 
 | # | Étape | Description | Statut |
 |---|---|---|---|
-| 29 | **Chat IA contextuel** | Chat dans le dashboard pour poser des questions en langage naturel. L'IA accède à toutes les données du titre (cours, indicateurs, articles, fondamentaux, alertes, position). Ex : *"Est-ce le bon moment pour renforcer LVMH ?"*, *"Compare AB Science et GenSight"*, *"Résume la semaine pour mon portefeuille"*. Endpoint `/api/chat/` + composant React ChatIA. | ⬜ À faire |
-| 30 | **Analyse fondamentale IA** | Quand les fondamentaux sont récupérés (PER, ROE, dette, croissance BPA, dividende), l'IA rédige une analyse qualitative : forces, faiblesses, positionnement sectoriel. Stocké dans `Fondamentaux.analyse_ia`. Mis à jour 2x/semaine avec les fondamentaux. | ⬜ À faire |
-| 31 | **Détection de patterns graphiques** | L'IA analyse les séries de chandeliers et détecte les patterns classiques : double bottom, tête-épaules, triangle, canal, drapeau. Annotations visuelles (marqueurs) sur le graphique Lightweight Charts. Nouveau modèle `PatternDetecte`. | ⬜ À faire |
-| 32 | **Recommandation de renforcement intelligent** | Quand un titre en portefeuille baisse significativement avec des fondamentaux solides, l'IA génère une observation contextuelle : *"AB Science a baissé de 15% ce mois. RSI à 35, fondamentaux stables. Historiquement, 4 rebonds sur 5 dans cette configuration sur ce titre."* Intégré dans les alertes de type `renforcement`. | ⬜ À faire |
-| 33 | **Digest hebdomadaire enrichi** | Vendredi soir : synthèse IA de la semaine — faits marquants par titre, mouvements significatifs, opportunités détectées, risques identifiés, performance du portefeuille. Email HTML + notification Telegram. Remplace le digest basique existant. | ⬜ À faire |
-| 34 | **Score de conviction IA** | Pour chaque titre, score 0-100 "conviction IA" combinant : technique (25%) + fondamentaux (35%) + sentiment presse (20%) + historique patterns (20%). Mis à jour quotidiennement. Affiché dans la fiche titre et la liste sidebar. Accompagné d'une explication 2-3 phrases. | ⬜ À faire |
-| 35 | **Veille sectorielle** | L'IA surveille le secteur de chaque titre (Healthcare, Consumer Cyclical, etc.) et alerte si : un concurrent annonce des résultats impactants, une réglementation change, un événement macro affecte le secteur. Source : Google News par secteur. Nouveau type d'alerte `sectorielle`. | ⬜ À faire |
+| 29 | **Chat IA contextuel** | Chat dans le dashboard — questions en langage naturel avec contexte titre. Endpoint `/api/chat/` + composant React ChatIA. | ✅ Fait |
+| 30 | **Analyse fondamentale IA** | Analyse qualitative Mistral des fondamentaux. Stocké dans `Fondamentaux.analyse_ia`. | ✅ Fait |
+| 31 | **Détection de patterns graphiques** | Double bottom, tête-épaules, triangle, canal, drapeau. Annotations visuelles Lightweight Charts. Modèle `PatternDetecte`. | ✅ Fait |
+| 32 | **Recommandation de renforcement intelligent** | Alerte contextuelle quand un titre en portefeuille baisse avec fondamentaux solides. Type alerte `renforcement`. | ✅ Fait |
+| 33 | **Digest hebdomadaire enrichi** | Synthèse IA vendredi soir — faits marquants, opportunités, risques. Email + Telegram. | ✅ Fait |
+| 34 | **Score de conviction IA** | Score 0-100 combinant technique (25%, **incluant MM20 + croisement MM20/MM50**) + fondamentaux (35%) + sentiment (20%) + historique (20%). Explication avec **points d'entrée** et niveaux de support/résistance en euros. | ✅ Fait |
+| 35 | **Veille sectorielle** | Surveillance sectorielle via Google News. Nouveau type d'alerte `sectorielle`. | ✅ Fait |
+| 36 | **yfinance source primaire** | Cours OHLCV via Yahoo Finance (gratuit, batch, 0 quota). EODHD libéré pour fondamentaux uniquement. Refresh temps réel à chaque visite. | ✅ Fait |
+| 37 | **Filtrage pertinence IA** | Mistral vérifie que chaque article concerne bien l'entreprise (pas d'homonymes). Articles hors-sujet marqués tag `hors_sujet`. | ✅ Fait |
+| 38 | **Mobile responsive + PWA** | Interface adaptée mobile (hamburger menu, grilles empilées, chat plein écran). PWA installable sur écran d'accueil. | ✅ Fait |
+| 39 | **Bouton Actualiser** | Bouton unique ↻ Actualiser par titre : cours + news + scoring + conviction (~10s). Remplace Analyser IA. | ✅ Fait |
+| 40 | **Périodes 3A et MAX** | Graphique Lightweight Charts avec historique complet (~20 ans via yfinance). | ✅ Fait |
 
 ### Architecture technique Phase 2
 
@@ -500,7 +522,7 @@ Exploiter pleinement l'IA (Mistral) pour transformer les données brutes en aide
 
 - **Jamais de conseil d'investissement** : l'IA formule toujours en termes d'observation et de probabilité historique, jamais d'injonction.
 - **Lightweight Charts** (TradingView, open source) pour les graphiques en chandeliers — pas Chart.js qui ne gère pas nativement l'OHLC.
-- **yfinance interdit en production** — scraping non officiel, rate limiting, bans IP fréquents.
+- **yfinance = source primaire des cours** — gratuit, batch mode, ~20 ans d'historique. Refresh automatique à chaque visite via `/api/titres/{ticker}/refresh/`. EODHD en fallback uniquement.
 - **Le champ `lot`** sur le modèle `Titre` (`'A'` ou `'B'`) est assigné à l'ajout du titre et pilote la rotation Celery.
 - **News mutualisée** : toujours 1 seul appel API avec tous les tickers en paramètre, jamais 1 appel par ticker.
 - **L'import historique OHLC** se fait en 1 seul appel bulk EODHD au premier lancement — jamais re-téléchargé, seulement enrichi chaque soir de la bougie du jour.
@@ -514,13 +536,20 @@ Exploiter pleinement l'IA (Mistral) pour transformer les données brutes en aide
 - **Mise à jour** : `bash update.sh` — git pull + migrate + collectstatic + rebuild React + restart services.
 - **VPS actuel** : ubuntu@51.210.8.158 (vps-78e9c3c9) — HTTP seul (pas de SSL), `default_server` Nginx sur l'IP.
 - **API en AllowAny** : app mono-utilisateur personnelle, pas d'authentification — CSRF désactivé (SessionAuthentication retirée).
-- **Sources news gratuites** : Google News RSS + Boursorama RSS + Zonebourse RSS + Reddit JSON = illimité. Planifié 9h + 13h lun-ven.
-- **Analyse complète auto** : à la création d'un titre, `analyse_complete_task` lance : import OHLCV + indicateurs + news 1 an + scoring + rapport IA.
+- **Sources news gratuites** : Google News RSS = illimité. Planifié 9h + 13h lun-ven. Boursorama/Zonebourse RSS retournent 404, Reddit bloqué 403.
+- **Analyse complète auto** : à la création d'un titre, `analyse_complete_task` lance : import OHLCV (yfinance) + indicateurs + fondamentaux (EODHD+FMP) + news 1 an + scoring pertinence + sentiment + analyse fondamentale IA + conviction IA.
 - **Suppression réelle** : `DELETE /api/titres/` fait un vrai delete (plus de soft delete) pour éviter les conflits à la re-création.
 - **NUMBA_DISABLE_JIT=1** : requis dans supervisor pour pandas-ta (numba cache corrompu sur www-data).
-- **EODHD tier gratuit** : 20 req/jour + historique limité à 1 an (256 bougies). Boutons période : 1S/1M/3M/6M/1A.
+- **EODHD tier gratuit** : 20 req/jour — réservé aux fondamentaux et news (cours via yfinance). Boutons période : 1S/1M/3M/6M/1A/3A/MAX.
 - **FMP stable API** : endpoints migrés de `/api/v3/` vers `/stable/` (symbol en query param).
-- **Mistral import** : `from mistralai.client import Mistral` (pas `from mistralai import Mistral`) sur la version installée.
+- **Mistral SDK** : version 1.6.0 — `from mistralai import Mistral`. Client forcé en HTTP/1.1 (`httpx.Client(http2=False)`) car HTTP/2 échoue sur VPS OVH (503 overflow).
+- **Filtrage pertinence articles** : Mistral vérifie chaque article avant scoring. Batch de 15 articles/appel. Articles hors-sujet → `score=0, tags=["hors_sujet"]` et exclus de l'affichage.
+- **auto_fill nom_court** : supprime les mots non-significatifs (Compagnie, Société, de) avant troncature. "Compagnie de Saint-Gobain" → "Saint-Gobain".
+- **Analyse technique** : 7 signaux — RSI, MACD, **MM20 vs prix**, **croisement MM20/MM50**, MM50 vs prix, MM200 vs prix, Bollinger. La MM20 est essentielle pour les points d'entrée (pullback).
+- **Score de conviction prompt** : Mistral identifie les meilleurs points d'entrée (zones MM20/MM50, supports, résistances en €). MAX_TOKENS=500.
+- **Mobile responsive** : media queries `@media (max-width: 768px)`. Sidebar → hamburger overlay. Grilles empilées. Chat plein écran. Pills scroll horizontal.
+- **PWA** : manifest.json + service worker (cache network-first). Icône chatbot.png. Raccourci écran d'accueil.
+- **Reddit désactivé** : API publique bloquée 403 depuis 2024. Google News + NewsAPI couvrent les besoins.
 - **CSG 2026** : surveiller la hausse proposée de 9,2% à 10,6% (prélèvements sociaux de 17,2% → 18,6% si votée).
 
 ---
