@@ -318,6 +318,15 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           />
         )}
         <PillMetrique
+          label="MM20 vs prix"
+          valeur={dernier?.mm_20 && dernier?.cloture
+            ? `${((Number(dernier.cloture) - Number(dernier.mm_20)) / Number(dernier.mm_20) * 100).toFixed(1)}%`
+            : '—'}
+          couleur={dernier?.mm_20 && dernier?.cloture
+            ? (Number(dernier.cloture) >= Number(dernier.mm_20) ? 'var(--color-text-success)' : 'var(--color-text-danger)')
+            : undefined}
+        />
+        <PillMetrique
           label="MM50 vs prix"
           valeur={dernier?.mm_50 && dernier?.cloture
             ? `${((Number(dernier.cloture) - Number(dernier.mm_50)) / Number(dernier.mm_50) * 100).toFixed(1)}%`
