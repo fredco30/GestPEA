@@ -27,7 +27,7 @@ from app.services.scoring_llm import calculer_sentiment_technique, _get_client
 logger = logging.getLogger(__name__)
 
 MODEL_CONVICTION = "mistral-small-latest"
-MAX_TOKENS = 300
+MAX_TOKENS = 500
 
 
 def _score_technique(ticker):
@@ -152,13 +152,21 @@ Composantes : technique {composantes.get('technique', 'N/A')}/25, fondamentaux {
 NIVEAUX DE PRIX :
 {niveaux}
 
-IMPORTANT : L'utilisateur est un investisseur PEA long terme.
-Rédige une explication concise en 2-3 phrases maximum, en langage ACCESSIBLE :
-- Mentionne la position du cours par rapport à la moyenne 20 jours (dynamique court terme) et la moyenne 50 jours (tendance moyen terme)
-- Indique les niveaux de prix concrets en euros : "support autour de XX €", "résistance vers XX €"
-- Si le cours est proche de la moyenne 20 jours, signale-le comme un point d'attention pour une entrée potentielle
-- Utilise des formulations comme "le titre se situe à", "la zone des XX € semble être un plancher"
-- Ne donne PAS de conseil d'investissement
+CONTEXTE : L'utilisateur est un investisseur PEA long terme qui cherche les meilleurs points d'entrée.
+
+Rédige une analyse concise en 3-4 phrases, en langage accessible :
+
+1. SITUATION ACTUELLE : Position du cours par rapport à la moyenne 20 jours (dynamique court terme) et 50 jours (moyen terme). Indique si la tendance CT est favorable ou non.
+
+2. POINTS D'ENTRÉE : Identifie les meilleurs niveaux de prix pour entrer ou renforcer :
+   - Si le cours est proche de la MM20 en tendance haussière → signaler le pullback comme zone d'entrée
+   - Si le cours est sous la MM20 → indiquer la MM20 comme résistance à reconquérir
+   - Indiquer les supports concrets en euros (MM50, Bollinger bas, plus bas récents)
+   - Exemple : "Une zone d'entrée intéressante se situerait entre XX € (MM20) et XX € (support)"
+
+3. RÉSISTANCES : Indiquer les niveaux à surveiller au-dessus (objectif analystes, plafond technique).
+
+Tous les niveaux doivent être en euros. Termine par un disclaimer : *Cette analyse ne constitue pas un conseil d'investissement.*
 Réponds directement sans titre ni introduction."""
 
     try:
@@ -166,7 +174,7 @@ Réponds directement sans titre ni introduction."""
         response = client.chat.complete(
             model=MODEL_CONVICTION,
             messages=[
-                {"role": "system", "content": "Tu es un analyste financier qui explique les scores de conviction en langage simple pour un débutant. Tu donnes toujours des niveaux de prix en euros. Jamais de conseil d'investissement."},
+                {"role": "system", "content": "Tu es un analyste financier expert en analyse technique. Tu aides un investisseur PEA long terme à identifier les meilleurs points d'entrée en utilisant les moyennes mobiles (MM20, MM50, MM200) et les niveaux de support/résistance. Tu donnes toujours des niveaux de prix concrets en euros."},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=MAX_TOKENS,
