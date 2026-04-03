@@ -127,8 +127,10 @@ def _get_niveaux_prix(ticker):
     if not bougie:
         return ""
     lines = [f"Cours actuel : {bougie.cloture} €"]
+    if bougie.mm_20:
+        lines.append(f"Moyenne 20 jours (tendance court terme) : {bougie.mm_20} €")
     if bougie.mm_50:
-        lines.append(f"Moyenne 50 jours (support court terme) : {bougie.mm_50} €")
+        lines.append(f"Moyenne 50 jours (tendance moyen terme) : {bougie.mm_50} €")
     if bougie.mm_200:
         lines.append(f"Moyenne 200 jours (support long terme) : {bougie.mm_200} €")
     if bougie.boll_inf:
@@ -150,10 +152,11 @@ Composantes : technique {composantes.get('technique', 'N/A')}/25, fondamentaux {
 NIVEAUX DE PRIX :
 {niveaux}
 
-IMPORTANT : L'utilisateur est un DÉBUTANT sans connaissance technique.
-Rédige une explication concise en 2-3 phrases maximum, en langage SIMPLE :
-- Pas de jargon technique (pas de RSI, MACD, Bollinger, MM50)
-- Indique les niveaux de prix concrets en euros : "zone de support autour de XX €", "résistance vers XX €", "zone intéressante entre XX € et XX €"
+IMPORTANT : L'utilisateur est un investisseur PEA long terme.
+Rédige une explication concise en 2-3 phrases maximum, en langage ACCESSIBLE :
+- Mentionne la position du cours par rapport à la moyenne 20 jours (dynamique court terme) et la moyenne 50 jours (tendance moyen terme)
+- Indique les niveaux de prix concrets en euros : "support autour de XX €", "résistance vers XX €"
+- Si le cours est proche de la moyenne 20 jours, signale-le comme un point d'attention pour une entrée potentielle
 - Utilise des formulations comme "le titre se situe à", "la zone des XX € semble être un plancher"
 - Ne donne PAS de conseil d'investissement
 Réponds directement sans titre ni introduction."""
