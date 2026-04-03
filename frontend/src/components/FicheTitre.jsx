@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTitre } from '../hooks/useTitre'
-import { analyserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
+import { analyserTitre, recalculerConviction, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
@@ -141,6 +141,16 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
   const [docs, setDocs]                   = useState([])
   const [typeDoc, setTypeDoc]             = useState('autre')
   const [uploading, setUploading]         = useState(false)
+  const [convictionEnCours, setConvictionEnCours] = useState(false)
+
+  const lancerConviction = useCallback(async () => {
+    setConvictionEnCours(true)
+    try {
+      await recalculerConviction(ticker)
+      onRefresh()
+    } catch (e) { console.error(e) }
+    finally { setConvictionEnCours(false) }
+  }, [ticker, onRefresh])
 
   const chargerDocs = useCallback(async () => {
     try { setDocs(await getDocuments(ticker)) } catch (e) { console.error(e) }
@@ -275,6 +285,23 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           }}
         >
           📎 Doc {docs.length > 0 && <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>({docs.length})</span>}
+        </button>
+
+        {/* Conviction IA */}
+        <button
+          onClick={lancerConviction}
+          disabled={convictionEnCours}
+          title="Recalculer le score de conviction IA"
+          style={{
+            padding: '5px 10px', fontSize: 11, fontWeight: 500,
+            background: 'var(--color-background-secondary)',
+            border: '0.5px solid var(--color-border-tertiary)',
+            borderRadius: 'var(--border-radius-md)',
+            cursor: convictionEnCours ? 'wait' : 'pointer',
+            color: 'var(--color-text-secondary)',
+          }}
+        >
+          {convictionEnCours ? '⏳...' : '🎯 Conviction'}
         </button>
 
         {/* Analyser IA */}

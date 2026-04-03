@@ -85,6 +85,10 @@ export const refreshCours = (ticker) =>
 export const importerHistorique = (ticker) =>
   post(`/titres/${ticker}/importer/`, {})
 
+/** Recalculer le score de conviction IA (rapide ~2s) */
+export const recalculerConviction = (ticker) =>
+  post(`/titres/${ticker}/conviction/`, {})
+
 /** Lancer l'analyse complete IA (indicateurs + news + scoring + sentiment) */
 export const analyserTitre = (ticker) =>
   post(`/titres/${ticker}/analyser/`, {})

@@ -327,6 +327,34 @@ class TitreViewSet(ViewSet):
                 'erreur': str(e),
             })
 
+    @action(detail=True, methods=['post'], url_path='conviction')
+    def conviction(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/conviction/
+        Recalcule le score de conviction IA (rapide, ~2s).
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+        try:
+            from app.services.conviction import calculer_score_conviction
+            result = calculer_score_conviction(titre.ticker)
+            if result:
+                return Response({
+                    'ticker': titre.ticker,
+                    'score': result['score'],
+                    'explication': result['explication'],
+                })
+            return Response({
+                'ticker': titre.ticker,
+                'score': None,
+                'erreur': 'Pas assez de données',
+            })
+        except Exception as e:
+            logger.error(f"[API] conviction {pk} : {e}")
+            return Response({
+                'ticker': pk.upper(),
+                'erreur': str(e),
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=True, methods=['post'], url_path='analyser')
     def analyser(self, request, pk=None):
         """
