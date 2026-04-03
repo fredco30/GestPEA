@@ -54,7 +54,7 @@ TOPICS_CONNUS = [
 # ---------------------------------------------------------------------------
 
 def _get_client():
-    """Retourne une instance du client Mistral."""
+    """Retourne une instance du client Mistral avec HTTP/1.1 (compatibilité OVH)."""
     try:
         from mistralai import Mistral
     except ImportError:
@@ -72,7 +72,11 @@ def _get_client():
             "MISTRAL_API_KEY manquant dans settings.py. "
             "Ajouter : MISTRAL_API_KEY = '...'"
         )
-    return Mistral(api_key=api_key)
+
+    # Forcer HTTP/1.1 : certains hébergeurs (OVH) ont des problèmes avec HTTP/2
+    import httpx
+    http_client = httpx.Client(http2=False, timeout=30.0)
+    return Mistral(api_key=api_key, http_client=http_client)
 
 
 # ---------------------------------------------------------------------------
