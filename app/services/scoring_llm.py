@@ -54,7 +54,7 @@ TOPICS_CONNUS = [
 # ---------------------------------------------------------------------------
 
 def _get_client():
-    """Retourne une instance du client Mistral."""
+    """Retourne une instance du client Mistral avec HTTP/1.1 (compatibilité OVH)."""
     try:
         from mistralai import Mistral
     except ImportError:
@@ -72,7 +72,11 @@ def _get_client():
             "MISTRAL_API_KEY manquant dans settings.py. "
             "Ajouter : MISTRAL_API_KEY = '...'"
         )
-    return Mistral(api_key=api_key)
+
+    # Forcer HTTP/1.1 : certains hébergeurs (OVH) ont des problèmes avec HTTP/2
+    import httpx
+    http_client = httpx.Client(http2=False, timeout=30.0)
+    return Mistral(api_key=api_key, client=http_client)
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +535,59 @@ def calculer_sentiment_technique(ticker: str) -> dict | None:
             s = 0.0
             signaux.append(f"MACD neutre ({hist:+.4f})")
         score_total += s
+
+    # --- Position vs MM20 (tendance court terme) ---
+    if bougie.mm_20 is not None and bougie.cloture:
+        cloture = float(bougie.cloture)
+        mm20 = float(bougie.mm_20)
+        ecart_pct = ((cloture - mm20) / mm20) * 100
+        nb_signaux += 1
+        if ecart_pct > 3:
+            s = 0.3
+            signaux.append(f"Cours {ecart_pct:+.1f}% au-dessus de la MM20 → dynamique CT haussière")
+        elif ecart_pct < -3:
+            s = -0.3
+            signaux.append(f"Cours {ecart_pct:+.1f}% en dessous de la MM20 → dynamique CT baissière")
+        elif -1 <= ecart_pct <= 1:
+            # Pullback sur MM20 — signal d'entrée potentiel
+            s = 0.2
+            signaux.append(f"Cours proche de la MM20 ({ecart_pct:+.1f}%) → pullback/point d'entrée potentiel")
+        else:
+            s = ecart_pct / 10
+            signaux.append(f"Cours {ecart_pct:+.1f}% vs MM20")
+        score_total += s
+
+    # --- Croisement MM20/MM50 (golden/death cross court terme) ---
+    if bougie.mm_20 is not None and bougie.mm_50 is not None:
+        mm20 = float(bougie.mm_20)
+        mm50 = float(bougie.mm_50)
+        # Récupérer la bougie précédente pour détecter un croisement récent
+        bougie_prev = titre.prix_journaliers.filter(
+            date__lt=bougie.date, mm_20__isnull=False, mm_50__isnull=False
+        ).order_by('-date').first()
+
+        if bougie_prev:
+            mm20_prev = float(bougie_prev.mm_20)
+            mm50_prev = float(bougie_prev.mm_50)
+            nb_signaux += 1
+
+            # Croisement haussier : MM20 passe au-dessus de MM50
+            if mm20 > mm50 and mm20_prev <= mm50_prev:
+                s = 0.7
+                signaux.append("Croisement haussier MM20/MM50 → signal d'achat court terme")
+            # Croisement baissier : MM20 passe en dessous de MM50
+            elif mm20 < mm50 and mm20_prev >= mm50_prev:
+                s = -0.7
+                signaux.append("Croisement baissier MM20/MM50 → signal de prudence")
+            # MM20 au-dessus de MM50 (tendance établie)
+            elif mm20 > mm50:
+                s = 0.2
+                signaux.append(f"MM20 > MM50 ({((mm20 - mm50) / mm50 * 100):+.1f}%) → tendance CT favorable")
+            # MM20 en dessous de MM50
+            else:
+                s = -0.2
+                signaux.append(f"MM20 < MM50 ({((mm20 - mm50) / mm50 * 100):+.1f}%) → tendance CT défavorable")
+            score_total += s
 
     # --- Position vs MM50 ---
     if bougie.mm_50 is not None and bougie.cloture:

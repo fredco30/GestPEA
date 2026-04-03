@@ -175,6 +175,7 @@ class TitreListSerializer(serializers.ModelSerializer):
                 'amplitude_pct':   p.amplitude_pct,
                 'rsi_14':          float(p.rsi_14) if p.rsi_14 else None,
                 'macd_hist':       float(p.macd_hist) if p.macd_hist else None,
+                'mm_20':           float(p.mm_20) if p.mm_20 else None,
                 'mm_50':           float(p.mm_50) if p.mm_50 else None,
             }
         return None

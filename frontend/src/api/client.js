@@ -77,9 +77,21 @@ export const deleteTitre = (ticker) =>
 export const getOHLC = (ticker, periode = '1A') =>
   get(`/titres/${ticker}/ohlc/`, { periode })
 
+/** Rafraichir le cours en temps reel via yfinance */
+export const refreshCours = (ticker) =>
+  post(`/titres/${ticker}/refresh/`, {})
+
 /** Relancer l'import historique bulk */
 export const importerHistorique = (ticker) =>
   post(`/titres/${ticker}/importer/`, {})
+
+/** Recalculer le score de conviction IA (rapide ~2s) */
+export const recalculerConviction = (ticker) =>
+  post(`/titres/${ticker}/conviction/`, {})
+
+/** Actualiser un seul titre : cours + news + scoring + conviction (~10s) */
+export const actualiserTitre = (ticker) =>
+  post(`/titres/${ticker}/actualiser/`, {})
 
 /** Lancer l'analyse complete IA (indicateurs + news + scoring + sentiment) */
 export const analyserTitre = (ticker) =>

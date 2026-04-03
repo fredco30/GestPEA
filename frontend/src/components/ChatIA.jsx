@@ -19,8 +19,8 @@ const STYLES = {
     position: 'fixed',
     bottom: 24,
     right: 24,
-    width: 80,
-    height: 80,
+    width: 64,
+    height: 64,
     borderRadius: '50%',
     background: 'transparent',
     border: 'none',
@@ -34,10 +34,10 @@ const STYLES = {
     transition: 'transform 0.2s',
   },
 
-  // Panel chat
+  // Panel chat — responsive via className mobile-chat-panel
   panel: {
     position: 'fixed',
-    bottom: 116,
+    bottom: 100,
     right: 24,
     width: 520,
     maxHeight: 680,
@@ -47,7 +47,7 @@ const STYLES = {
     boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
     display: 'flex',
     flexDirection: 'column',
-    zIndex: 1000,
+    zIndex: 1001,
     overflow: 'hidden',
   },
 
@@ -178,6 +178,20 @@ const STYLES = {
 }
 
 // ---------------------------------------------------------------------------
+// Hook mobile
+// ---------------------------------------------------------------------------
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(window.innerWidth <= 768)
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+  return mobile
+}
+
+// ---------------------------------------------------------------------------
 // Composant
 // ---------------------------------------------------------------------------
 
@@ -187,6 +201,7 @@ export default function ChatIA({ ticker }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
+  const isMobile = useIsMobile()
 
   // Auto-scroll en bas
   useEffect(() => {
@@ -241,16 +256,29 @@ export default function ChatIA({ ticker }) {
     <>
       {/* Bouton flottant */}
       <button
-        style={STYLES.fab}
+        style={{
+          ...STYLES.fab,
+          ...(isMobile ? { width: 48, height: 48, bottom: 14, right: 14 } : {}),
+        }}
         onClick={() => setOpen(o => !o)}
         title="Chat IA"
       >
-        <img src="/chatbot.png" alt="Chat IA" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
+        <img src="/chatbot.png" alt="Chat IA" style={{
+          width: isMobile ? 48 : 64, height: isMobile ? 48 : 64,
+          borderRadius: '50%', objectFit: 'cover',
+        }} />
       </button>
 
       {/* Panel */}
       {open && (
-        <div style={STYLES.panel}>
+        <div style={isMobile ? {
+          position: 'fixed', inset: 0,
+          width: '100%', height: '100%', maxHeight: '100%',
+          borderRadius: 0,
+          background: 'var(--color-background-primary)',
+          display: 'flex', flexDirection: 'column',
+          zIndex: 1001, overflow: 'hidden',
+        } : STYLES.panel}>
           {/* Header */}
           <div style={STYLES.header}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -28,9 +28,21 @@ urlpatterns = [
          views.TitreViewSet.as_view({'post': 'importer'}),
          name='titre-importer'),
 
+    path('titres/<str:pk>/refresh/',
+         views.TitreViewSet.as_view({'post': 'refresh'}),
+         name='titre-refresh'),
+
     path('titres/<str:pk>/config/',
          views.TitreViewSet.as_view({'get': 'config_alertes', 'patch': 'config_alertes'}),
          name='titre-config'),
+
+    path('titres/<str:pk>/conviction/',
+         views.TitreViewSet.as_view({'post': 'conviction'}),
+         name='titre-conviction'),
+
+    path('titres/<str:pk>/actualiser/',
+         views.TitreViewSet.as_view({'post': 'actualiser'}),
+         name='titre-actualiser'),
 
     path('titres/<str:pk>/analyser/',
          views.TitreViewSet.as_view({'post': 'analyser'}),

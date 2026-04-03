@@ -287,6 +287,160 @@ class TitreViewSet(ViewSet):
             'ticker':  titre.ticker,
         })
 
+    @action(detail=True, methods=['post'], url_path='refresh')
+    def refresh(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/refresh/
+        Rafraichit le cours en temps reel via yfinance (gratuit, 0 quota).
+        Appele automatiquement par le frontend a chaque chargement de fiche.
+        Retourne le dernier cours mis a jour.
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+
+        try:
+            from app.services.yfinance_client import YFinanceClient
+            client = YFinanceClient()
+            result = client.maj_cours_batch([titre.ticker], jours=5)
+
+            dernier = titre.prix_journaliers.order_by('-date').first()
+            return Response({
+                'ticker': titre.ticker,
+                'source': 'yfinance',
+                'ok': titre.ticker in result.get('ok', []),
+                'dernier_cours': {
+                    'date':            str(dernier.date) if dernier else None,
+                    'ouverture':       float(dernier.ouverture) if dernier else None,
+                    'haut':            float(dernier.haut) if dernier else None,
+                    'bas':             float(dernier.bas) if dernier else None,
+                    'cloture':         float(dernier.cloture) if dernier else None,
+                    'cloture_veille':  float(dernier.cloture_veille) if dernier and dernier.cloture_veille else None,
+                    'volume':          dernier.volume if dernier else None,
+                    'variation_veille_pct': dernier.variation_veille_pct if dernier else None,
+                } if dernier else None,
+            })
+        except Exception as e:
+            logger.error(f"[API] refresh {pk} : {e}")
+            return Response({
+                'ticker': pk.upper(),
+                'source': 'yfinance',
+                'ok': False,
+                'erreur': str(e),
+            })
+
+    @action(detail=True, methods=['post'], url_path='conviction')
+    def conviction(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/conviction/
+        Recalcule le score de conviction IA (rapide, ~2s).
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+        try:
+            from app.services.conviction import calculer_score_conviction
+            result = calculer_score_conviction(titre.ticker)
+            if result:
+                return Response({
+                    'ticker': titre.ticker,
+                    'score': result['score'],
+                    'explication': result['explication'],
+                })
+            return Response({
+                'ticker': titre.ticker,
+                'score': None,
+                'erreur': 'Pas assez de données',
+            })
+        except Exception as e:
+            logger.error(f"[API] conviction {pk} : {e}")
+            return Response({
+                'ticker': pk.upper(),
+                'erreur': str(e),
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'], url_path='actualiser')
+    def actualiser(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/actualiser/
+        Actualise TOUT pour un seul titre (cours + news + scoring + conviction).
+        Rapide (~10s) — ne touche qu'au titre affiché.
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+        resultats = {'ticker': titre.ticker, 'etapes': {}}
+
+        # 1. Cours yfinance (gratuit, ~1s)
+        try:
+            from app.services.yfinance_client import YFinanceClient
+            yf = YFinanceClient()
+            r = yf.maj_cours_batch([titre.ticker], jours=5)
+            resultats['etapes']['cours'] = 'ok' if titre.ticker in r.get('ok', []) else 'skip'
+        except Exception as e:
+            resultats['etapes']['cours'] = str(e)
+
+        # 2. Indicateurs techniques
+        try:
+            import os
+            os.environ.setdefault('NUMBA_DISABLE_JIT', '1')
+            from app.services.indicators import calculate_indicators
+            calculate_indicators(titre)
+            resultats['etapes']['indicateurs'] = 'ok'
+        except Exception as e:
+            resultats['etapes']['indicateurs'] = str(e)
+
+        # 3. Collecte news fraîches (NewsAPI + RSS)
+        nb_articles = 0
+        try:
+            from django.conf import settings as django_settings
+            if django_settings.NEWSAPI_KEY:
+                from app.services.newsapi_client import NewsAPIClient
+                newsapi = NewsAPIClient()
+                nb_articles += newsapi.import_news_pour_titres([titre.ticker])
+                newsapi.maj_quota()
+        except Exception as e:
+            logger.error(f"[API] actualiser {pk} newsapi : {e}")
+
+        try:
+            from app.services.rss_news import RSSCollector
+            rss = RSSCollector()
+            rss_result = rss.import_all_sources([titre.ticker], historique=False)
+            nb_articles += sum(rss_result.values())
+        except Exception as e:
+            logger.error(f"[API] actualiser {pk} rss : {e}")
+
+        resultats['etapes']['articles'] = nb_articles
+
+        # 4. Scoring sentiment (pertinence + score)
+        nb_scores = 0
+        try:
+            from app.models import Article as ArticleModel
+            ids = list(
+                ArticleModel.objects.filter(
+                    titre=titre, score_sentiment__isnull=True
+                ).values_list('id', flat=True)
+            )
+            if ids:
+                from app.services.scoring_llm import scorer_articles
+                nb_scores = scorer_articles(ids)
+        except Exception as e:
+            logger.error(f"[API] actualiser {pk} scoring : {e}")
+        resultats['etapes']['scoring'] = nb_scores
+
+        # 5. Sentiment mixte
+        try:
+            from app.services.scoring_llm import generer_sentiment_mixte
+            generer_sentiment_mixte(titre.ticker)
+            resultats['etapes']['sentiment'] = 'ok'
+        except Exception as e:
+            resultats['etapes']['sentiment'] = str(e)
+
+        # 6. Conviction IA
+        try:
+            from app.services.conviction import calculer_score_conviction
+            conv = calculer_score_conviction(titre.ticker)
+            resultats['etapes']['conviction'] = conv.get('score') if conv else None
+        except Exception as e:
+            resultats['etapes']['conviction'] = str(e)
+
+        logger.info(f"[API] actualiser {titre.ticker} : {resultats['etapes']}")
+        return Response(resultats)
+
     @action(detail=True, methods=['post'], url_path='analyser')
     def analyser(self, request, pk=None):
         """
