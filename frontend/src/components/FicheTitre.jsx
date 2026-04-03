@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTitre } from '../hooks/useTitre'
-import { analyserTitre, recalculerConviction, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
+import { actualiserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
@@ -17,11 +17,11 @@ export default function FicheTitre({ ticker }) {
   const [analyseResultat, setAnalyseResultat] = useState(null)
   const [docsRefreshKey, setDocsRefreshKey] = useState(0)  // eslint-disable-line
 
-  const lancerAnalyse = async () => {
+  const lancerActualisation = async () => {
     setAnalyseEnCours(true)
     setAnalyseResultat(null)
     try {
-      const result = await analyserTitre(ticker)
+      const result = await actualiserTitre(ticker)
       setAnalyseResultat(result)
       rafraichir()
     } catch (e) {
@@ -48,7 +48,7 @@ export default function FicheTitre({ ticker }) {
         dernier={dernier}
         sentimentGlobal={sentimentGlobal}
         analyseEnCours={analyseEnCours}
-        onAnalyse={lancerAnalyse}
+        onActualiser={lancerActualisation}
         onRefresh={rafraichir}
         onDocUploaded={() => setDocsRefreshKey(k => k + 1)}
       />
@@ -131,7 +131,7 @@ export default function FicheTitre({ ticker }) {
 // En-tête compact — 2 lignes
 // ---------------------------------------------------------------------------
 
-function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours, onAnalyse, onRefresh, onDocUploaded }) {
+function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours, onActualiser, onRefresh, onDocUploaded }) {
   const [editPos, setEditPos]             = useState(false)
   const [nbActions, setNbActions]         = useState(titre.nb_actions || '')
   const [prixRevient, setPrixRevient]     = useState(titre.prix_revient_moyen || '')
@@ -141,16 +141,6 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
   const [docs, setDocs]                   = useState([])
   const [typeDoc, setTypeDoc]             = useState('autre')
   const [uploading, setUploading]         = useState(false)
-  const [convictionEnCours, setConvictionEnCours] = useState(false)
-
-  const lancerConviction = useCallback(async () => {
-    setConvictionEnCours(true)
-    try {
-      await recalculerConviction(ticker)
-      onRefresh()
-    } catch (e) { console.error(e) }
-    finally { setConvictionEnCours(false) }
-  }, [ticker, onRefresh])
 
   const chargerDocs = useCallback(async () => {
     try { setDocs(await getDocuments(ticker)) } catch (e) { console.error(e) }
@@ -287,27 +277,11 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           📎 Doc {docs.length > 0 && <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>({docs.length})</span>}
         </button>
 
-        {/* Conviction IA */}
+        {/* Actualiser : cours + news + scoring + conviction */}
         <button
-          onClick={lancerConviction}
-          disabled={convictionEnCours}
-          title="Recalculer le score de conviction IA"
-          style={{
-            padding: '5px 10px', fontSize: 11, fontWeight: 500,
-            background: 'var(--color-background-secondary)',
-            border: '0.5px solid var(--color-border-tertiary)',
-            borderRadius: 'var(--border-radius-md)',
-            cursor: convictionEnCours ? 'wait' : 'pointer',
-            color: 'var(--color-text-secondary)',
-          }}
-        >
-          {convictionEnCours ? '⏳...' : '🎯 Conviction'}
-        </button>
-
-        {/* Analyser IA */}
-        <button
-          onClick={onAnalyse}
+          onClick={onActualiser}
           disabled={analyseEnCours}
+          title="Actualiser cours, articles, sentiment et conviction pour ce titre"
           style={{
             padding: '5px 12px', fontSize: 12, fontWeight: 500,
             background: analyseEnCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
@@ -316,7 +290,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
             cursor: analyseEnCours ? 'wait' : 'pointer',
           }}
         >
-          {analyseEnCours ? '⏳ Analyse...' : '✦ Analyser IA'}
+          {analyseEnCours ? '⏳ Actualisation...' : '↻ Actualiser'}
         </button>
       </div>
 

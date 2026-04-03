@@ -40,6 +40,10 @@ urlpatterns = [
          views.TitreViewSet.as_view({'post': 'conviction'}),
          name='titre-conviction'),
 
+    path('titres/<str:pk>/actualiser/',
+         views.TitreViewSet.as_view({'post': 'actualiser'}),
+         name='titre-actualiser'),
+
     path('titres/<str:pk>/analyser/',
          views.TitreViewSet.as_view({'post': 'analyser'}),
          name='titre-analyser'),

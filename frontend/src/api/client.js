@@ -89,6 +89,10 @@ export const importerHistorique = (ticker) =>
 export const recalculerConviction = (ticker) =>
   post(`/titres/${ticker}/conviction/`, {})
 
+/** Actualiser un seul titre : cours + news + scoring + conviction (~10s) */
+export const actualiserTitre = (ticker) =>
+  post(`/titres/${ticker}/actualiser/`, {})
+
 /** Lancer l'analyse complete IA (indicateurs + news + scoring + sentiment) */
 export const analyserTitre = (ticker) =>
   post(`/titres/${ticker}/analyser/`, {})
