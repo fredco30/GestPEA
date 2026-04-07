@@ -99,9 +99,10 @@ class YFinanceClient:
     def _traiter_ticker(self, raw, ticker: str, multi: bool) -> None:
         """Traite les données d'un ticker depuis le DataFrame batch."""
         # Extraction du sous-DataFrame pour ce ticker
-        if multi:
+        # yf.download avec group_by='ticker' crée un multi-index même pour 1 ticker
+        try:
             df = raw[ticker].dropna(how='all')
-        else:
+        except KeyError:
             df = raw.dropna(how='all')
 
         if df.empty:
