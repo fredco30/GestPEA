@@ -5,9 +5,9 @@
  * Affiche : métriques clés, graphique technique, sentiment, news, alertes.
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTitre } from '../hooks/useTitre'
-import { actualiserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
+import { actualiserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument, getTitreDetail, analyserTradingAgents } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
@@ -92,6 +92,9 @@ export default function FicheTitre({ ticker }) {
         </div>
       )}
 
+      {/* ---- Analyse approfondie TradingAgents ---- */}
+      <AnalyseApprofondie titre={titre} ticker={ticker} />
+
       {/* ---- Graphique technique ---- */}
       {ohlc && (
         <GraphiqueTechnique
@@ -130,6 +133,114 @@ export default function FicheTitre({ ticker }) {
 // ---------------------------------------------------------------------------
 // En-tête compact — 2 lignes
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Analyse approfondie TradingAgents (multi-agents externe, asynchrone)
+// ---------------------------------------------------------------------------
+function AnalyseApprofondie({ titre, ticker }) {
+  const [statut, setStatut]           = useState(titre.ta_statut || '')
+  const [note, setNote]               = useState(titre.ta_note || '')
+  const [rapport, setRapport]         = useState(titre.ta_rapport || '')
+  const [dateAnalyse, setDateAnalyse] = useState(titre.ta_date_analyse || null)
+  const [erreur, setErreur]           = useState(null)
+  const pollRef = useRef(null)
+
+  const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
+
+  const rafraichir = useCallback(async () => {
+    try {
+      const t = await getTitreDetail(ticker)
+      setStatut(t.ta_statut || '')
+      setNote(t.ta_note || '')
+      setRapport(t.ta_rapport || '')
+      setDateAnalyse(t.ta_date_analyse || null)
+      if (t.ta_statut !== 'en_cours') stopPoll()
+    } catch (e) { /* on réessaiera au prochain tick */ }
+  }, [ticker])
+
+  // Démarre/arrête le polling selon le statut (gère aussi l'ouverture sur une analyse déjà lancée)
+  useEffect(() => {
+    if (statut === 'en_cours' && !pollRef.current) pollRef.current = setInterval(rafraichir, 25000)
+    return stopPoll
+  }, [statut, rafraichir])
+
+  const lancer = async () => {
+    setErreur(null)
+    try {
+      await analyserTradingAgents(ticker)
+      setStatut('en_cours')
+    } catch (e) {
+      setErreur(e.message || 'Erreur au lancement')
+    }
+  }
+
+  const enCours = statut === 'en_cours'
+  const noteU = (note || '').toLowerCase()
+  const couleurNote = /buy|overweight/.test(noteU) ? 'success'
+    : /sell|underweight/.test(noteU) ? 'danger'
+    : 'warning'
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)', padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    marginBottom: (rapport || enCours || erreur || !note) ? 10 : 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          🔬 Analyse approfondie
+          <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> · TradingAgents (multi-agents)</span>
+        </span>
+        {note && !enCours && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 12,
+            background: `var(--color-background-${couleurNote})`, color: `var(--color-text-${couleurNote})`,
+          }}>{note}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button onClick={lancer} disabled={enCours} title="Analyse multi-agents approfondie (≈ quelques centimes, 2-5 min)"
+          style={{
+            padding: '5px 12px', fontSize: 12, fontWeight: 500,
+            background: enCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
+            color: enCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
+            border: 'none', borderRadius: 'var(--border-radius-md)', cursor: enCours ? 'wait' : 'pointer',
+          }}>
+          {enCours ? '⏳ Analyse en cours…' : (note ? '↻ Relancer' : '✦ Lancer l\'analyse')}
+        </button>
+      </div>
+
+      {enCours && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+          Les agents (technique, sentiment, fondamentaux, débat haussier/baissier, équipe risque) travaillent…
+          Cela prend 2 à 5 minutes — le rapport apparaîtra ici automatiquement. Tu peux continuer à naviguer en attendant.
+        </div>
+      )}
+
+      {erreur && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Erreur : {erreur}</div>
+      )}
+
+      {rapport && !enCours && (
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+          {rapport}
+          {dateAnalyse && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8 }}>
+              Analyse du {new Date(dateAnalyse).toLocaleString('fr-FR')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!note && !enCours && !erreur && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Lance une analyse multi-agents approfondie : note Buy/Hold/Sell + synthèse en français
+          (technique, sentiment, fondamentaux, débat haussier/baissier, risque).
+        </div>
+      )}
+    </div>
+  )
+}
 
 function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours, onActualiser, onRefresh, onDocUploaded }) {
   const [editPos, setEditPos]             = useState(false)

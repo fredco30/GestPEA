@@ -65,6 +65,20 @@ class Titre(models.Model):
                                               help_text="Explication IA 2-3 phrases du score de conviction")
     date_calcul_conviction = models.DateTimeField(null=True, blank=True)
 
+    # Analyse approfondie TradingAgents (pont externe multi-agents — Phase 2)
+    TA_STATUT_CHOICES = [
+        ('', '—'),
+        ('en_cours', 'En cours'),
+        ('termine',  'Terminé'),
+        ('erreur',   'Erreur'),
+    ]
+    ta_note         = models.CharField(max_length=20, blank=True,
+                                       help_text="Note TradingAgents : Buy/Overweight/Hold/Underweight/Sell")
+    ta_rapport      = models.TextField(blank=True,
+                                       help_text="Synthèse française de l'analyse multi-agents TradingAgents")
+    ta_statut       = models.CharField(max_length=12, choices=TA_STATUT_CHOICES, default='', blank=True)
+    ta_date_analyse = models.DateTimeField(null=True, blank=True)
+
     # Métadonnées
     actif        = models.BooleanField(default=True)
     date_ajout   = models.DateTimeField(auto_now_add=True)

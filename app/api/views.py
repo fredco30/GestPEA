@@ -540,6 +540,35 @@ class TitreViewSet(ViewSet):
 
         return Response(resultats)
 
+    @action(detail=True, methods=['post'], url_path='tradingagents')
+    def tradingagents(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/tradingagents/
+        Lance l'analyse approfondie multi-agents (TradingAgents) en tâche de fond
+        (2-5 min, quelques centimes). Le résultat (note + rapport FR) devient
+        ensuite lisible via la fiche du titre (champs ta_note / ta_rapport).
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+
+        # Garde-fou : pas de double lancement
+        if titre.ta_statut == 'en_cours':
+            return Response(
+                {'ta_statut': 'en_cours', 'message': 'Une analyse approfondie est déjà en cours.'},
+                status=status.HTTP_200_OK,
+            )
+
+        titre.ta_statut = 'en_cours'
+        titre.save(update_fields=['ta_statut'])
+
+        from app.tasks import analyse_tradingagents_task
+        analyse_tradingagents_task.delay(titre.ticker, request.data.get('date') or None)
+
+        return Response(
+            {'ta_statut': 'en_cours',
+             'message': 'Analyse approfondie lancée — résultat dans 2 à 5 minutes.'},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
     @action(detail=True, methods=['get', 'patch'], url_path='config')
     def config_alertes(self, request, pk=None):
         """

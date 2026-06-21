@@ -324,4 +324,16 @@ STATIC_ROOT  = BASE_DIR / 'staticfiles'
 MEDIA_URL    = '/media/'
 MEDIA_ROOT   = BASE_DIR / 'media'
 
+# ---------------------------------------------------------------------------
+# PONT TRADINGAGENTS (outil multi-agents externe, venv séparé)
+# ---------------------------------------------------------------------------
+# TradingAgents tourne dans son propre environnement (deps incompatibles Django) :
+# on l'invoque en sous-processus. Voir app/services/tradingagents_bridge.py.
+TRADINGAGENTS_PYTHON  = env('TRADINGAGENTS_PYTHON',  default='/var/www/tradingagents/venv/bin/python')
+TRADINGAGENTS_SCRIPT  = env('TRADINGAGENTS_SCRIPT',  default=str(BASE_DIR / 'scripts' / 'gestpea_ta_bridge.py'))
+TRADINGAGENTS_ENV     = env('TRADINGAGENTS_ENV',     default='/var/www/tradingagents/.env')
+# HOME/cwd du sous-processus : doit appartenir à www-data (TradingAgents écrit dans ~/.tradingagents)
+TRADINGAGENTS_HOME    = env('TRADINGAGENTS_HOME',    default='/var/www/tradingagents')
+TRADINGAGENTS_TIMEOUT = env.int('TRADINGAGENTS_TIMEOUT', default=600)
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

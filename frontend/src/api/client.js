@@ -97,6 +97,10 @@ export const actualiserTitre = (ticker) =>
 export const analyserTitre = (ticker) =>
   post(`/titres/${ticker}/analyser/`, {})
 
+/** Lancer l'analyse approfondie TradingAgents (multi-agents, async 2-5 min) */
+export const analyserTradingAgents = (ticker) =>
+  post(`/titres/${ticker}/tradingagents/`, {})
+
 /** Lire la config alertes d'un titre */
 export const getConfigAlertes = (ticker) =>
   get(`/titres/${ticker}/config/`)

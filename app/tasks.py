@@ -1077,3 +1077,33 @@ def fetch_news_gratuites_task(self):
     except Exception as exc:
         logger.error(f"[Task] news_gratuites — erreur : {exc}", exc_info=True)
         raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# 12. ANALYSE APPROFONDIE — pont TradingAgents (multi-agents externe)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, time_limit=900, soft_time_limit=840, max_retries=0)
+def analyse_tradingagents_task(self, ticker: str, analyse_date: str = None):
+    """
+    Lance l'analyse approfondie TradingAgents pour un titre (2-5 min, ~centimes).
+    Persiste note + rapport FR sur le Titre. Déclenchée par le bouton de la fiche.
+    """
+    from app.services.tradingagents_bridge import analyser_titre
+    try:
+        data = analyser_titre(ticker, analyse_date)
+        return {'status': 'ok' if data.get('ok') else 'error',
+                'ticker': ticker, 'note': data.get('note')}
+    except Exception as exc:
+        logger.error(f"[Task] analyse_tradingagents {ticker} — erreur : {exc}", exc_info=True)
+        # Marquer le titre en erreur pour débloquer le bouton côté front
+        try:
+            from app.models import Titre
+            Titre.objects.filter(ticker=ticker).update(
+                ta_statut='erreur',
+                ta_rapport=f"Erreur technique : {exc}",
+                ta_date_analyse=timezone.now(),
+            )
+        except Exception:
+            pass
+        return {'status': 'error', 'ticker': ticker, 'error': str(exc)}

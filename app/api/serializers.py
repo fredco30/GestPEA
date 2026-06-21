@@ -225,6 +225,7 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             'patterns_actifs',
             'notes',
             'score_conviction', 'explication_conviction', 'date_calcul_conviction',
+            'ta_note', 'ta_rapport', 'ta_statut', 'ta_date_analyse',
         ]
 
     def get_prix_historique(self, obj):
