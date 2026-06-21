@@ -79,6 +79,59 @@ def _get_client():
     return Mistral(api_key=api_key, client=http_client)
 
 
+def _parse_resultats(texte: str) -> list:
+    """
+    Parseur JSON TOLÉRANT pour les réponses LLM.
+    Gère les cas où Mistral renvoie : un tableau propre, des objets séparés
+    (NDJSON), du texte/markdown parasite, ou des données en trop après le JSON
+    (« Extra data ») — au lieu de tout rejeter comme json.loads strict.
+    Retourne une liste d'objets (dicts).
+    """
+    if not texte:
+        return []
+    texte = texte.strip()
+
+    # Retirer d'éventuelles clôtures markdown ```json ... ```
+    if "```" in texte:
+        parts = texte.split("```")
+        if len(parts) >= 2:
+            texte = parts[1]
+            if texte.lstrip().lower().startswith("json"):
+                texte = texte.lstrip()[4:]
+            texte = texte.strip()
+
+    # 1) Cas nominal : un tableau JSON (on ignore d'éventuelles données en trop)
+    debut = texte.find("[")
+    if debut != -1:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(texte[debut:])
+            if isinstance(obj, list):
+                return obj
+        except json.JSONDecodeError:
+            pass
+
+    # 2) Fallback : décoder chaque valeur JSON successive (NDJSON / objets multiples)
+    resultats = []
+    decoder = json.JSONDecoder()
+    i, n = 0, len(texte)
+    while i < n:
+        while i < n and texte[i] not in "[{":
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, end = decoder.raw_decode(texte, i)
+        except json.JSONDecodeError:
+            i += 1
+            continue
+        if isinstance(obj, list):
+            resultats.extend(o for o in obj if isinstance(o, dict))
+        elif isinstance(obj, dict):
+            resultats.append(obj)
+        i = max(end, i + 1)
+    return resultats
+
+
 # ---------------------------------------------------------------------------
 # 0. FILTRAGE PERTINENCE DES ARTICLES (IA)
 # ---------------------------------------------------------------------------
@@ -339,14 +392,12 @@ Règles de scoring :
 
         contenu = response.choices[0].message.content.strip()
 
-        # Nettoyer si le modèle a quand même ajouté des backticks
-        if contenu.startswith("```"):
-            contenu = contenu.split("```")[1]
-            if contenu.startswith("json"):
-                contenu = contenu[4:]
-        contenu = contenu.strip()
-
-        resultats = json.loads(contenu)
+        # Parseur tolérant : gère "Extra data", NDJSON, markdown parasite
+        # (sinon un seul caractère en trop faisait échouer tout le lot).
+        resultats = _parse_resultats(contenu)
+        if not resultats:
+            logger.error("[LLM] _scorer_batch : aucune donnée JSON exploitable — %r", contenu[:120])
+            return 0
 
         nb_ok = 0
         now = timezone.now()
