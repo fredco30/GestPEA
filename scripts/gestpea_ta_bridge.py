@@ -40,10 +40,23 @@ def main():
     ticker = sys.argv[1].strip()
     analyse_date = sys.argv[2].strip()
 
+    ta_env = os.environ.get("GESTPEA_TA_ENV", "/var/www/tradingagents/.env")
+
+    # Se placer dans le dossier de TradingAgents AVANT tout import : certaines
+    # dépendances (pydantic-settings / dotenv) cherchent un ".env" en remontant
+    # depuis le cwd — sans ça, lancé depuis /var/www/pea, le sous-processus tente
+    # de lire le .env de Django (interdit à www-data → PermissionError).
+    ta_home = os.path.dirname(ta_env) or "."
+    try:
+        if os.path.isdir(ta_home):
+            os.chdir(ta_home)
+    except Exception:
+        pass
+
     # Charger le .env TradingAgents (clés Mistral / FRED)
     try:
         from dotenv import load_dotenv
-        load_dotenv(os.environ.get("GESTPEA_TA_ENV", "/var/www/tradingagents/.env"))
+        load_dotenv(ta_env)
     except Exception:
         pass  # python-dotenv absent ou .env introuvable → on tente avec l'env courant
 
