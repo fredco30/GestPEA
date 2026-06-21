@@ -120,41 +120,45 @@ def _score_historique(ticker):
 
 
 def _get_niveaux_prix(ticker):
-    """Récupère les niveaux de prix clés pour un titre."""
+    """Récupère les niveaux de prix clés pour un titre, dans sa devise de cotation."""
     from app.models import PrixJournalier, Fondamentaux
+    from app.services.devises import symbole_pour_ticker
     bougie = PrixJournalier.objects.filter(titre__ticker=ticker).order_by('-date').first()
     fond = Fondamentaux.objects.filter(titre__ticker=ticker).order_by('-date_maj').first()
     if not bougie:
         return ""
-    lines = [f"Cours actuel : {bougie.cloture} €"]
+    sym = symbole_pour_ticker(ticker)
+    lines = [f"Cours actuel : {bougie.cloture} {sym}"]
     if bougie.mm_50:
-        lines.append(f"Moyenne 50 jours (support court terme) : {bougie.mm_50} €")
+        lines.append(f"Moyenne 50 jours (support court terme) : {bougie.mm_50} {sym}")
     if bougie.mm_200:
-        lines.append(f"Moyenne 200 jours (support long terme) : {bougie.mm_200} €")
+        lines.append(f"Moyenne 200 jours (support long terme) : {bougie.mm_200} {sym}")
     if bougie.boll_inf:
-        lines.append(f"Plancher technique (Bollinger bas) : {bougie.boll_inf} €")
+        lines.append(f"Plancher technique (Bollinger bas) : {bougie.boll_inf} {sym}")
     if bougie.boll_sup:
-        lines.append(f"Plafond technique (Bollinger haut) : {bougie.boll_sup} €")
+        lines.append(f"Plafond technique (Bollinger haut) : {bougie.boll_sup} {sym}")
     if fond and fond.objectif_cours_moyen:
-        lines.append(f"Objectif moyen des analystes : {fond.objectif_cours_moyen} €")
+        lines.append(f"Objectif moyen des analystes : {fond.objectif_cours_moyen} {sym}")
     return "\n".join(lines)
 
 
 def _generer_explication(ticker, score_total, composantes):
     """Génère une explication IA du score en 2-3 phrases via Mistral."""
+    from app.services.devises import symbole_pour_ticker
     niveaux = _get_niveaux_prix(ticker)
+    sym = symbole_pour_ticker(ticker)
 
     prompt = f"""Score de conviction pour {ticker} : {score_total}/100.
 Composantes : technique {composantes.get('technique', 'N/A')}/25, fondamentaux {composantes.get('fondamentaux', 'N/A')}/35, sentiment presse {composantes.get('sentiment', 'N/A')}/20, historique {composantes.get('historique', 'N/A')}/20.
 
-NIVEAUX DE PRIX :
+NIVEAUX DE PRIX (devise du titre : {sym}) :
 {niveaux}
 
 IMPORTANT : L'utilisateur est un DÉBUTANT sans connaissance technique.
 Rédige une explication concise en 2-3 phrases maximum, en langage SIMPLE :
 - Pas de jargon technique (pas de RSI, MACD, Bollinger, MM50)
-- Indique les niveaux de prix concrets en euros : "zone de support autour de XX €", "résistance vers XX €", "zone intéressante entre XX € et XX €"
-- Utilise des formulations comme "le titre se situe à", "la zone des XX € semble être un plancher"
+- Indique les niveaux de prix concrets dans la devise du titre ({sym}) : "zone de support autour de XX {sym}", "résistance vers XX {sym}", "zone intéressante entre XX {sym} et XX {sym}"
+- Utilise des formulations comme "le titre se situe à", "la zone des XX {sym} semble être un plancher"
 - Ne donne PAS de conseil d'investissement
 Réponds directement sans titre ni introduction."""
 
@@ -163,7 +167,7 @@ Réponds directement sans titre ni introduction."""
         response = client.chat.complete(
             model=MODEL_CONVICTION,
             messages=[
-                {"role": "system", "content": "Tu es un analyste financier qui explique les scores de conviction en langage simple pour un débutant. Tu donnes toujours des niveaux de prix en euros. Jamais de conseil d'investissement."},
+                {"role": "system", "content": "Tu es un analyste financier qui explique les scores de conviction en langage simple pour un débutant. Tu donnes toujours les niveaux de prix dans la devise de cotation du titre (€ pour un titre en euros, $ pour un titre en dollars…). Jamais de conseil d'investissement."},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=MAX_TOKENS,

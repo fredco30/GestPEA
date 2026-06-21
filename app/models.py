@@ -30,12 +30,19 @@ class Titre(models.Model):
     nom_court    = models.CharField(max_length=20, blank=True, help_text="Ex: LVMH, Air Liquide")
 
     # Place boursière
-    place        = models.CharField(max_length=20, blank=True, help_text="Ex: EPA, AMS, XETRA")
-    pays         = models.CharField(max_length=3, blank=True, help_text="Code ISO-3 : FRA, DEU, NLD… (auto-rempli)")
+    place        = models.CharField(max_length=20, blank=True, help_text="Ex: EPA, AMS, XETRA, NASDAQ")
+    pays         = models.CharField(max_length=3, blank=True, help_text="Code ISO-3 : FRA, DEU, NLD, USA… (auto-rempli)")
     secteur      = models.CharField(max_length=80, blank=True)
     sous_secteur = models.CharField(max_length=80, blank=True)
+    devise       = models.CharField(max_length=4, default='EUR',
+                                    help_text="Devise de cotation : EUR, USD, GBP, GBX… (auto-remplie via EODHD)")
 
-    # Éligibilité PEA (mise à jour par le screener mensuel)
+    # Enveloppe fiscale de détention (PEA européen vs Compte-Titres pour les titres hors PEA)
+    COMPTE_CHOICES = [('pea', 'PEA'), ('cto', 'Compte-titres (CTO)')]
+    compte       = models.CharField(max_length=4, choices=COMPTE_CHOICES, default='pea',
+                                    help_text="Enveloppe de détention : PEA (UE/EEE) ou CTO (US, hors-PEA)")
+
+    # Éligibilité PEA (mise à jour par le screener mensuel) — info fiscale, ne filtre plus la collecte
     eligible_pea          = models.BooleanField(default=False)
     date_verif_eligibilite = models.DateField(null=True, blank=True)
 
@@ -71,14 +78,27 @@ class Titre(models.Model):
             models.Index(fields=['statut']),
             models.Index(fields=['lot']),
             models.Index(fields=['eligible_pea']),
+            models.Index(fields=['compte']),
         ]
 
     def __str__(self):
         return f"{self.ticker} — {self.nom_court or self.nom}"
 
+    # Symboles d'affichage par devise (front + prompts LLM)
+    SYMBOLES_DEVISE = {
+        'EUR': '€', 'USD': '$', 'GBP': '£', 'GBX': 'p',
+        'CHF': 'CHF', 'JPY': '¥', 'CAD': 'C$', 'AUD': 'A$',
+        'SEK': 'kr', 'NOK': 'kr', 'DKK': 'kr', 'HKD': 'HK$',
+    }
+
+    @property
+    def symbole_devise(self):
+        """Symbole monétaire à afficher pour cette devise (défaut € si inconnue)."""
+        return self.SYMBOLES_DEVISE.get((self.devise or 'EUR').upper(), self.devise or '€')
+
     @property
     def valeur_position(self):
-        """Valeur actuelle de la position (nb actions × dernier cours)."""
+        """Valeur actuelle de la position (nb actions × dernier cours), en devise native du titre."""
         dernier = self.prix_journaliers.order_by('-date').first()
         if dernier and self.nb_actions:
             return self.nb_actions * dernier.cloture
@@ -86,7 +106,7 @@ class Titre(models.Model):
 
     @property
     def plus_moins_value(self):
-        """PV/MV latente en euros."""
+        """PV/MV latente, en devise native du titre (même devise que le PRU)."""
         vp = self.valeur_position
         if vp and self.prix_revient_moyen and self.nb_actions:
             return vp - (self.nb_actions * self.prix_revient_moyen)
@@ -694,6 +714,38 @@ class ApiQuota(models.Model):
     def restantes(self):
         limites = {'eodhd': 20, 'fmp': 250, 'newsapi': 100}
         return max(0, limites.get(self.api, 0) - self.nb_requetes)
+
+
+# ---------------------------------------------------------------------------
+# TAUX DE CHANGE (conversion multi-devises pour l'agrégation du portefeuille)
+# ---------------------------------------------------------------------------
+
+class TauxChange(models.Model):
+    """
+    Taux de conversion d'une devise vers l'EUR, à une date donnée.
+    Utilisé pour agréger un portefeuille multi-devises (PEA en EUR + CTO en USD…).
+    Rafraîchi quotidiennement via EODHD Forex (tâche Celery), avec fallback configurable.
+
+    taux_vers_eur = combien d'EUR vaut 1 unité de `devise`.
+    Ex : 1 USD ≈ 0,92 EUR  →  taux_vers_eur = 0.92
+    """
+    devise        = models.CharField(max_length=4, help_text="Code devise source : USD, GBP, GBX…")
+    date          = models.DateField()
+    taux_vers_eur = models.DecimalField(max_digits=16, decimal_places=8,
+                                        help_text="1 unité de `devise` = X EUR")
+    source        = models.CharField(max_length=20, default='eodhd',
+                                     help_text="eodhd | fallback | manuel")
+    date_maj      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('devise', 'date')
+        ordering = ['-date']
+        indexes = [models.Index(fields=['devise', 'date'])]
+        verbose_name = 'Taux de change'
+        verbose_name_plural = 'Taux de change'
+
+    def __str__(self):
+        return f"1 {self.devise} = {self.taux_vers_eur} EUR ({self.date})"
 
 
 # ---------------------------------------------------------------------------

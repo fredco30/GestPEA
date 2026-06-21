@@ -49,8 +49,10 @@ class TitreAdmin(admin.ModelAdmin):
 
             # Auto-remplissage IA
             metadata = auto_remplir_titre(obj.ticker)
+            # devise/compte ont un défaut truthy (EUR/pea) : la détection auto fait foi
+            champs_autoritaires = {'devise', 'compte', 'eligible_pea', 'pays'}
             for champ, valeur in metadata.items():
-                if not getattr(obj, champ, None):
+                if champ in champs_autoritaires or not getattr(obj, champ, None):
                     setattr(obj, champ, valeur)
 
             # Assigner le lot A/B en alternance

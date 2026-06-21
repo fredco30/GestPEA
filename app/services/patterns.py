@@ -597,6 +597,8 @@ def _generer_description(pattern_data, ticker, nom):
         'pennant': 'fanion (pause triangulaire après un mouvement fort)',
     }
 
+    from app.services.devises import symbole_pour_ticker
+    sym = symbole_pour_ticker(ticker)
     type_label = type_labels.get(pattern_data['type_pattern'], pattern_data['type_pattern'])
     support = pattern_data.get('prix_support', 'N/D')
     resistance = pattern_data.get('prix_resistance', 'N/D')
@@ -609,16 +611,16 @@ def _generer_description(pattern_data, ticker, nom):
             model=MODEL_PATTERN,
             max_tokens=200,
             messages=[
-                {"role": "system", "content": "Tu expliques simplement les figures graphiques boursières à un débutant complet. 2-3 phrases maximum, en français, avec des niveaux de prix en euros. Pas de conseil d'investissement."},
+                {"role": "system", "content": "Tu expliques simplement les figures graphiques boursières à un débutant complet. 2-3 phrases maximum, en français, avec des niveaux de prix dans la devise de cotation du titre (sans les convertir). Pas de conseil d'investissement."},
                 {"role": "user", "content": (
                     f"Explique cette figure sur {nom} ({ticker}) : {type_label}. "
                     f"Statut : {statut}. "
-                    f"Zone plancher : {support} €, zone plafond : {resistance} €"
-                    f"{f', objectif : {objectif} €' if objectif and objectif != 'N/D' else ''}."
+                    f"Zone plancher : {support} {sym}, zone plafond : {resistance} {sym}"
+                    f"{f', objectif : {objectif} {sym}' if objectif and objectif != 'N/D' else ''}."
                 )},
             ],
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error("[Patterns] Erreur description IA %s : %s", ticker, e)
-        return f"Figure de type {type_label} détectée ({statut}). Zone plancher : {support} €, zone plafond : {resistance} €."
+        return f"Figure de type {type_label} détectée ({statut}). Zone plancher : {support} {sym}, zone plafond : {resistance} {sym}."
