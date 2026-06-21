@@ -118,6 +118,9 @@ export default function FicheTitre({ ticker }) {
         <FeedArticles articles={titre.articles_recents} />
       </div>
 
+      {/* ---- Analyse documentaire (impact des PDF sur le score) ---- */}
+      <AnalyseDocuments titre={titre} />
+
       {/* ---- Alertes récentes ---- */}
       {titre.alertes_recentes?.length > 0 && (
         <CarteAlertes alertes={titre.alertes_recentes} ticker={ticker} />
@@ -125,9 +128,6 @@ export default function FicheTitre({ ticker }) {
 
       {/* ---- Fondamentaux ---- */}
       {fond && <CarteFondamentaux fond={fond} />}
-
-      {/* ---- Analyse documentaire (impact des PDF sur le score) ---- */}
-      <AnalyseDocuments titre={titre} />
 
     </div>
   )
