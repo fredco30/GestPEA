@@ -35,7 +35,6 @@ export default function FicheTitre({ ticker }) {
   if (!titre)  return <div style={{ color: 'var(--color-text-tertiary)', padding: 24 }}>Titre introuvable.</div>
 
   const dernier         = titre.prix_historique?.[titre.prix_historique.length - 1]
-  const sym             = titre.symbole_devise || '€'
   const sentimentGlobal = titre.sentiments_30j?.[titre.sentiments_30j.length - 1]
   const fond            = titre.fondamentaux
 
@@ -149,6 +148,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
   useEffect(() => { chargerDocs() }, [chargerDocs])
 
+  const sym          = titre.symbole_devise || '€'
   const nb           = Number(titre.nb_actions) || 0
   const prm          = Number(titre.prix_revient_moyen) || 0
   const coursActuel  = dernier ? Number(dernier.cloture) : null
