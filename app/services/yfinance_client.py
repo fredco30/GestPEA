@@ -37,6 +37,26 @@ class YFinanceClient:
     Mode batch : récupère tous les tickers en un seul appel HTTP.
     """
 
+    # Conversion suffixe EODHD → Yahoo Finance.
+    # La plupart des places Euronext partagent le même suffixe (.PA/.AS/.BR/.MI/.MC) ;
+    # seules quelques-unes diffèrent (US sans suffixe, Londres .L, Xetra .DE).
+    _SUFFIXE_EODHD_VERS_YAHOO = {
+        'US': '',       # actions US : AAPL.US (EODHD) → AAPL (Yahoo)
+        'LSE': 'L',     # Londres : VOD.LSE → VOD.L
+        'XETRA': 'DE',  # Allemagne Xetra : SAP.XETRA → SAP.DE
+    }
+
+    @staticmethod
+    def _ticker_yahoo(ticker: str) -> str:
+        """Convertit un ticker EODHD en ticker Yahoo Finance (remappe le DB ticker)."""
+        if '.' not in ticker:
+            return ticker
+        code, _, suf = ticker.rpartition('.')
+        suf_yahoo = YFinanceClient._SUFFIXE_EODHD_VERS_YAHOO.get(suf.upper())
+        if suf_yahoo is None:
+            return ticker                       # suffixe identique EODHD/Yahoo
+        return code if suf_yahoo == '' else f"{code}.{suf_yahoo}"
+
     @staticmethod
     def _dec(val) -> Optional[Decimal]:
         """Convertit un float pandas en Decimal, gère NaN."""
@@ -66,10 +86,13 @@ class YFinanceClient:
 
         ok, ko = [], []
         multi = len(tickers) > 1
+        # Tickers convertis au format Yahoo pour l'appel (AAPL.US → AAPL), en
+        # gardant la correspondance avec le ticker EODHD stocké en base.
+        tickers_yahoo = [self._ticker_yahoo(t) for t in tickers]
 
         try:
             raw = yf.download(
-                tickers,
+                tickers_yahoo,
                 period=f"{jours}d",
                 group_by="ticker",
                 auto_adjust=True,
@@ -78,7 +101,7 @@ class YFinanceClient:
             )
 
             if raw.empty:
-                logger.warning("[yfinance] Aucune donnée retournée pour %s", tickers)
+                logger.warning("[yfinance] Aucune donnée retournée pour %s", tickers_yahoo)
                 return {'ok': [], 'ko': list(tickers), 'source': 'yfinance'}
 
         except Exception as e:
@@ -87,7 +110,7 @@ class YFinanceClient:
 
         for ticker in tickers:
             try:
-                self._traiter_ticker(raw, ticker, multi)
+                self._traiter_ticker(raw, ticker, self._ticker_yahoo(ticker), multi)
                 ok.append(ticker)
             except Exception as e:
                 logger.error("[yfinance] Erreur %s : %s", ticker, e)
@@ -96,12 +119,15 @@ class YFinanceClient:
         logger.info("[yfinance] Batch terminé : %d ok, %d ko", len(ok), len(ko))
         return {'ok': ok, 'ko': ko, 'source': 'yfinance'}
 
-    def _traiter_ticker(self, raw, ticker: str, multi: bool) -> None:
-        """Traite les données d'un ticker depuis le DataFrame batch."""
-        # Extraction du sous-DataFrame pour ce ticker
+    def _traiter_ticker(self, raw, ticker: str, ticker_yahoo: str, multi: bool) -> None:
+        """Traite les données d'un ticker depuis le DataFrame batch.
+
+        `ticker` = ticker EODHD (clé en base) ; `ticker_yahoo` = clé dans le DataFrame.
+        """
+        # Extraction du sous-DataFrame pour ce ticker (indexé par le ticker Yahoo)
         # yf.download avec group_by='ticker' crée un multi-index même pour 1 ticker
         try:
-            df = raw[ticker].dropna(how='all')
+            df = raw[ticker_yahoo].dropna(how='all')
         except KeyError:
             df = raw.dropna(how='all')
 
@@ -174,7 +200,7 @@ class YFinanceClient:
         logger.info("[yfinance] Import historique : %s", ticker)
 
         try:
-            tk = yf.Ticker(ticker)
+            tk = yf.Ticker(self._ticker_yahoo(ticker))
             df = tk.history(period="max", auto_adjust=True)
         except Exception as e:
             logger.error("[yfinance] Erreur historique %s : %s", ticker, e)
