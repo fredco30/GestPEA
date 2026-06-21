@@ -101,25 +101,17 @@ def _parse_resultats(texte: str) -> list:
                 texte = texte.lstrip()[4:]
             texte = texte.strip()
 
-    # 1) Cas nominal : un tableau JSON (on ignore d'éventuelles données en trop)
-    debut = texte.find("[")
-    if debut != -1:
-        try:
-            obj, _ = json.JSONDecoder().raw_decode(texte[debut:])
-            if isinstance(obj, list):
-                return [o for o in obj if isinstance(o, dict)]
-        except json.JSONDecodeError:
-            pass
-
-    # 2) Fallback : décoder chaque valeur JSON successive (NDJSON / objets multiples)
+    # Décoder chaque valeur JSON successive et ne garder que les OBJETS {id,score,tags}.
+    # Gère TOUS les formats observés : tableau [ ... ], objets séparés par virgules ou
+    # retours-ligne SANS crochets, tags imbriqués (consommés avec leur objet parent,
+    # donc jamais pris pour le tableau racine), et réponse tronquée (queue ignorée).
     resultats = []
     decoder = json.JSONDecoder()
     i, n = 0, len(texte)
     while i < n:
-        while i < n and texte[i] not in "[{":
+        if texte[i] not in "[{":
             i += 1
-        if i >= n:
-            break
+            continue
         try:
             obj, end = decoder.raw_decode(texte, i)
         except json.JSONDecodeError:
