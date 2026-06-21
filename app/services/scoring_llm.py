@@ -1359,3 +1359,81 @@ FORMAT ATTENDU :
     except Exception as e:
         logger.error(f"[LLM] generer_digest_hebdomadaire — erreur : {e}", exc_info=True)
         return f"Digest PEA — semaine du {depuis}\n\nErreur de génération. Consulter le dashboard.\n\n— Ces observations ne constituent pas des conseils d'investissement."
+
+
+# ---------------------------------------------------------------------------
+# IMPACT DES DOCUMENTS UPLOADÉS (composante du score de conviction)
+# ---------------------------------------------------------------------------
+
+def evaluer_impact_documents(ticker: str):
+    """
+    Note l'IMPACT GLOBAL des documents uploadés d'un titre (-1 à +1) via Mistral,
+    et persiste score_documents + analyse_documents_ia sur le Titre.
+
+    Ces documents (rapports annuels, études cliniques, présentations…) ne figurent
+    PAS dans la presse : ils apportent un signal PROPRE, intégré au score de conviction.
+    Retourne le score (float) ou None si pas de document exploitable.
+    """
+    from decimal import Decimal
+    from django.utils import timezone
+    from app.models import Titre, DocumentTitre
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        return None
+
+    docs = list(DocumentTitre.objects.filter(titre=titre).order_by('-date_upload')[:8])
+    blocs = []
+    for d in docs:
+        contenu = (d.resume_ia or d.texte_extrait or "").strip()
+        if contenu:
+            blocs.append(f"[{d.get_type_doc_display()}] {d.nom}\n{contenu[:1500]}")
+    if not blocs:
+        return None
+
+    prompt = f"""Voici des documents PROPRES à {titre.nom or titre.ticker} ({titre.ticker}), secteur {titre.secteur or 'inconnu'} — rapports, études, présentations — qui ne figurent PAS dans la presse grand public.
+
+{chr(10).join(blocs)}
+
+Évalue leur IMPACT GLOBAL sur les perspectives du titre, du point de vue d'un investisseur long terme.
+Réponds UNIQUEMENT en JSON : {{"score": <nombre de -1.0 (très négatif) à +1.0 (très positif)>, "analyse": "<2-3 phrases en français, langage simple et factuel>"}}
+- 0.0 = neutre / sans impact clair.
+- Base-toi sur le CONTENU (résultats d'études, jalons cliniques, finances, contrats…), pas sur le ton."""
+
+    try:
+        client = _get_client()
+        response = _mistral_complete(
+            client,
+            model=MODEL_ALERTE,
+            max_tokens=400,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": (
+                    "Tu évalues l'impact de documents d'entreprise sur les perspectives d'une action. "
+                    "Tu réponds uniquement en JSON {score, analyse}. Jamais de conseil d'investissement."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        objs = _parse_resultats(response.choices[0].message.content.strip())
+        if not objs:
+            logger.warning("[LLM] evaluer_documents %s : JSON illisible", ticker)
+            return None
+        data = objs[0]
+        try:
+            score = max(-1.0, min(1.0, float(data.get("score"))))
+        except (TypeError, ValueError):
+            logger.warning("[LLM] evaluer_documents %s : score invalide", ticker)
+            return None
+
+        titre.score_documents = Decimal(str(round(score, 3)))
+        titre.analyse_documents_ia = (data.get("analyse") or "").strip()
+        titre.date_score_documents = timezone.now()
+        titre.save(update_fields=['score_documents', 'analyse_documents_ia', 'date_score_documents'])
+        logger.info("[LLM] Impact documents %s : %.2f (%d docs)", ticker, score, len(docs))
+        return score
+
+    except Exception as e:
+        logger.error("[LLM] evaluer_documents %s : %s", ticker, e)
+        return None

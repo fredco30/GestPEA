@@ -29,14 +29,24 @@ logger = logging.getLogger(__name__)
 MODEL_CONVICTION = "mistral-small-latest"
 MAX_TOKENS = 500
 
+# Pondération centralisée du score de conviction (somme = 100).
+# Facile à ajuster ici sans toucher au reste du code.
+POIDS_CONVICTION = {
+    'technique':    20,
+    'fondamentaux': 30,
+    'sentiment':    20,
+    'documents':    15,   # impact des documents uploadés (signal propre, hors presse)
+    'historique':   15,
+}
+
 
 def _score_technique(ticker):
-    """Composante technique (0-25 pts) à partir de calculer_sentiment_technique."""
+    """Composante technique à partir de calculer_sentiment_technique."""
     result = calculer_sentiment_technique(ticker)
     if not result:
         return None, {}
-    # score est entre -1 et +1, normaliser vers 0-25
-    score_norm = round((result['score'] + 1) / 2 * 25)
+    # score est entre -1 et +1, normaliser vers le poids de la composante
+    score_norm = round((result['score'] + 1) / 2 * POIDS_CONVICTION['technique'])
     return score_norm, {
         'score_brut': result['score'],
         'nb_signaux': result['nb_signaux'],
@@ -45,12 +55,12 @@ def _score_technique(ticker):
 
 
 def _score_fondamentaux(ticker):
-    """Composante fondamentaux (0-35 pts) à partir de score_qualite."""
+    """Composante fondamentaux à partir de score_qualite."""
     fonda = Fondamentaux.objects.filter(titre__ticker=ticker).order_by('-date_maj').first()
     if not fonda or fonda.score_qualite is None:
         return None, {}
-    # score_qualite est 0-10, normaliser vers 0-35
-    score_norm = round(float(fonda.score_qualite) / 10 * 35)
+    # score_qualite est 0-10, normaliser vers le poids de la composante
+    score_norm = round(float(fonda.score_qualite) / 10 * POIDS_CONVICTION['fondamentaux'])
     return score_norm, {
         'score_qualite': float(fonda.score_qualite),
         'per': str(fonda.per) if fonda.per else 'N/A',
@@ -60,14 +70,14 @@ def _score_fondamentaux(ticker):
 
 
 def _score_sentiment(ticker):
-    """Composante sentiment presse (0-20 pts)."""
+    """Composante sentiment presse."""
     sentiment = ScoreSentiment.objects.filter(
         titre__ticker=ticker, source='presse'
     ).order_by('-date').first()
     if not sentiment:
         return None, {}
-    # score est entre -1 et +1, normaliser vers 0-20
-    score_norm = round((float(sentiment.score) + 1) / 2 * 20)
+    # score est entre -1 et +1, normaliser vers le poids de la composante
+    score_norm = round((float(sentiment.score) + 1) / 2 * POIDS_CONVICTION['sentiment'])
     return score_norm, {
         'score_brut': float(sentiment.score),
         'label': sentiment.label,
@@ -110,12 +120,59 @@ def _score_historique(ticker):
     else:
         sig_score = 3  # neutre
 
-    score_norm = fiab_score + sig_score
-    return min(score_norm, 20), {
+    # Score interne 0-20 (fiab 0-14 + signaux 0-6) → rescalé sur le poids de la composante
+    score_interne = min(fiab_score + sig_score, 20)
+    score_norm = round(score_interne / 20 * POIDS_CONVICTION['historique'])
+    return score_norm, {
         'fiabilite_moyenne': round(fiab_score / 14 * 100) if fiab_score else 0,
         'nb_alertes': nb_alertes,
         'signaux_haussiers': signaux_h,
         'signaux_baissiers': signaux_b,
+    }
+
+
+def _score_documents(ticker):
+    """
+    Composante DOCUMENTS : impact des documents uploadés, noté par Mistral (-1 à +1).
+    Calculé en cache sur le Titre (score_documents) ; recalculé seulement si un
+    document a changé depuis la dernière évaluation (pour ne pas re-appeler le LLM
+    à chaque conviction).
+    """
+    from app.models import Titre, DocumentTitre
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        return None, {}
+
+    dernier_doc = (
+        DocumentTitre.objects.filter(titre=titre)
+        .order_by('-date_upload')
+        .values_list('date_upload', flat=True)
+        .first()
+    )
+    if not dernier_doc:
+        return None, {}  # aucun document → composante absente
+
+    # (Re)calcul si pas encore noté, ou si un document est plus récent que la dernière éval
+    if titre.score_documents is None or titre.date_score_documents is None \
+            or dernier_doc > titre.date_score_documents:
+        try:
+            from app.services.scoring_llm import evaluer_impact_documents
+            evaluer_impact_documents(ticker)
+            titre.refresh_from_db(fields=['score_documents', 'analyse_documents_ia', 'date_score_documents'])
+        except Exception as e:
+            logger.error("Évaluation documents %s échouée : %s", ticker, e)
+
+    if titre.score_documents is None:
+        return None, {}
+
+    # -1..+1 → 0..poids
+    score_norm = round((float(titre.score_documents) + 1) / 2 * POIDS_CONVICTION['documents'])
+    return score_norm, {
+        'score_brut': float(titre.score_documents),
+        'nb_documents': DocumentTitre.objects.filter(titre=titre).count(),
+        'analyse': titre.analyse_documents_ia,
     }
 
 
@@ -150,9 +207,24 @@ def _generer_explication(ticker, score_total, composantes):
     niveaux = _get_niveaux_prix(ticker)
     sym = symbole_pour_ticker(ticker)
 
-    prompt = f"""Score de conviction pour {ticker} : {score_total}/100.
-Composantes : technique {composantes.get('technique', 'N/A')}/25, fondamentaux {composantes.get('fondamentaux', 'N/A')}/35, sentiment presse {composantes.get('sentiment', 'N/A')}/20, historique {composantes.get('historique', 'N/A')}/20.
+    libelles = {'technique': 'technique', 'fondamentaux': 'fondamentaux',
+                'sentiment': 'sentiment presse', 'documents': 'documents',
+                'historique': 'historique'}
+    comp_txt = ", ".join(
+        f"{libelles[nom]} {composantes.get(nom)}/{poids}"
+        for nom, poids in POIDS_CONVICTION.items()
+        if composantes.get(nom) is not None
+    ) or "données partielles"
 
+    # Contexte documents : l'analyse Mistral de tes PDF (signal hors-presse)
+    doc_ctx = ""
+    analyse_doc = (composantes.get('details_documents') or {}).get('analyse')
+    if analyse_doc:
+        doc_ctx = f"\nDOCUMENTS DÉPOSÉS PAR L'UTILISATEUR (rapports/études, hors presse) — impact :\n{analyse_doc}\n"
+
+    prompt = f"""Score de conviction pour {ticker} : {score_total}/100.
+Composantes : {comp_txt}.
+{doc_ctx}
 NIVEAUX DE PRIX (devise du titre : {sym}) :
 {niveaux}
 
@@ -193,16 +265,11 @@ Réponds directement sans titre ni introduction."""
 def _explication_fallback(ticker, score, composantes):
     """Explication de secours sans appel IA."""
     niveau = "élevé" if score >= 70 else "modéré" if score >= 40 else "faible"
-    parts = []
-    tech = composantes.get('technique')
-    fonda = composantes.get('fondamentaux')
-    sent = composantes.get('sentiment')
-    if tech is not None:
-        parts.append(f"technique {tech}/25")
-    if fonda is not None:
-        parts.append(f"fondamentaux {fonda}/35")
-    if sent is not None:
-        parts.append(f"sentiment {sent}/20")
+    parts = [
+        f"{nom} {composantes.get(nom)}/{poids}"
+        for nom, poids in POIDS_CONVICTION.items()
+        if composantes.get(nom) is not None
+    ]
     detail = ", ".join(parts) if parts else "données partielles"
     return f"Score de conviction {niveau} ({score}/100) pour {ticker}. Composantes : {detail}."
 
@@ -220,27 +287,29 @@ def calculer_score_conviction(ticker):
         logger.warning("Titre %s non trouvé pour calcul conviction", ticker)
         return None
 
-    # Calculer les 4 composantes
+    # Calculer les composantes
     tech_score, tech_details = _score_technique(ticker)
     fonda_score, fonda_details = _score_fondamentaux(ticker)
     sent_score, sent_details = _score_sentiment(ticker)
+    doc_score, doc_details = _score_documents(ticker)
     hist_score, hist_details = _score_historique(ticker)
 
-    # Compter les composantes disponibles et calculer le score
+    # Compter les composantes disponibles et calculer le score (poids centralisés)
     composantes_dispo = {}
     score_obtenu = 0
     max_possible = 0
 
-    for nom, score, poids in [
-        ('technique', tech_score, 25),
-        ('fondamentaux', fonda_score, 35),
-        ('sentiment', sent_score, 20),
-        ('historique', hist_score, 20),
+    for nom, score in [
+        ('technique', tech_score),
+        ('fondamentaux', fonda_score),
+        ('sentiment', sent_score),
+        ('documents', doc_score),
+        ('historique', hist_score),
     ]:
         if score is not None:
             composantes_dispo[nom] = score
             score_obtenu += score
-            max_possible += poids
+            max_possible += POIDS_CONVICTION[nom]
         else:
             composantes_dispo[nom] = None
 
@@ -257,6 +326,7 @@ def calculer_score_conviction(ticker):
     composantes_dispo['details_technique'] = tech_details
     composantes_dispo['details_fondamentaux'] = fonda_details
     composantes_dispo['details_sentiment'] = sent_details
+    composantes_dispo['details_documents'] = doc_details
     composantes_dispo['details_historique'] = hist_details
 
     # Générer l'explication IA

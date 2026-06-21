@@ -79,6 +79,16 @@ class Titre(models.Model):
     ta_statut       = models.CharField(max_length=12, choices=TA_STATUT_CHOICES, default='', blank=True)
     ta_date_analyse = models.DateTimeField(null=True, blank=True)
 
+    # Impact des documents uploadés sur les perspectives (noté par Mistral, -1 à +1)
+    # Alimente une composante du score de conviction. Recalculé quand un document change.
+    score_documents      = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True,
+                                                validators=[MinValueValidator(decimal.Decimal('-1')),
+                                                            MaxValueValidator(decimal.Decimal('1'))],
+                                                help_text="Impact global des documents : -1 (négatif) à +1 (positif)")
+    analyse_documents_ia = models.TextField(blank=True,
+                                            help_text="Synthèse IA de l'impact des documents uploadés")
+    date_score_documents = models.DateTimeField(null=True, blank=True)
+
     # Métadonnées
     actif        = models.BooleanField(default=True)
     date_ajout   = models.DateTimeField(auto_now_add=True)
