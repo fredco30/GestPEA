@@ -887,9 +887,9 @@ def generer_texte_alerte(alerte_id: int) -> bool:
     alerte.nb_occurrences_passees  = nb_occurrences
     alerte.save(update_fields=['fiabilite_historique', 'nb_occurrences_passees'])
 
-    # Contexte profil investisseur
+    # Contexte profil investisseur — enveloppe réelle du titre (PEA européen vs CTO US)
     profil_ctx = {
-        "enveloppe":           "PEA",
+        "enveloppe":           titre.get_compte_display(),
         "horizon":             f"{profil.horizon_min_ans}–{profil.horizon_max_ans} ans" if profil else "7-15 ans",
         "style":               profil.style if profil else "croissance",
         "mode_accumulation":   profil.mode_accumulation if profil else True,
@@ -911,6 +911,9 @@ def generer_texte_alerte(alerte_id: int) -> bool:
             "objectif_analystes": str(fond.objectif_cours_moyen) if fond and fond.objectif_cours_moyen else "N/D",
         }
 
+    # Devise de cotation du titre (€ pour PEA, $ pour un titre US d'un CTO…)
+    sym = titre.symbole_devise
+
     # --- Contexte renforcement (étape 32) ---
     renforcement_ctx = ""
     is_renforcement = any(s.get('type_signal') == 'renforcement' for s in signaux)
@@ -919,8 +922,8 @@ def generer_texte_alerte(alerte_id: int) -> bool:
         pv_mv = titre.plus_moins_value
         renforcement_ctx = f"""
 CONTEXTE RENFORCEMENT (titre en portefeuille) :
-- Position actuelle : {titre.nb_actions} actions, PRU {pru} €
-- Plus/moins-value latente : {pv_mv} €
+- Position actuelle : {titre.nb_actions} actions, PRU {pru} {sym}
+- Plus/moins-value latente : {pv_mv} {sym}
 - Ce titre est DÉJÀ en portefeuille — l'alerte concerne un renforcement potentiel
 """
 
@@ -928,9 +931,9 @@ CONTEXTE RENFORCEMENT (titre en portefeuille) :
 
     prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur DÉBUTANT gérant son PEA en mode long terme. Cette personne n'a AUCUNE connaissance technique — elle ne sait pas ce qu'est un RSI, un MACD ou des bandes de Bollinger.
 
-TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur}
+TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur} — devise {titre.devise} ({sym})
 DATE : {alerte.date_signal}
-COURS AU SIGNAL : {alerte.cours_au_signal} €
+COURS AU SIGNAL : {alerte.cours_au_signal} {sym}
 SCORE DE CONFLUENCE : {alerte.score_confluence}/10
 NIVEAU : {alerte.niveau}
 {renforcement_ctx}
@@ -956,11 +959,11 @@ PROFIL INVESTISSEUR :
 INSTRUCTIONS DE RÉDACTION :
 1. Commence par une ligne de titre : "NOM_TITRE · Type d'opportunité · Score X/10"
 2. Explique la situation en langage SIMPLE (pas de jargon technique : pas de RSI, MACD, Bollinger, MM50)
-3. Indique clairement les NIVEAUX DE PRIX EN EUROS :
-   - "Zone de support autour de XX €" (niveau en dessous duquel le titre pourrait baisser davantage)
-   - "Zone de résistance vers XX €" (niveau au-dessus duquel le titre aurait du mal à monter)
-   - "Zone d'entrée potentielle entre XX € et XX €" si pertinent
-   - "Objectif des analystes : XX €" si disponible
+3. Indique clairement les NIVEAUX DE PRIX DANS LA DEVISE DU TITRE ({sym}) :
+   - "Zone de support autour de XX {sym}" (niveau en dessous duquel le titre pourrait baisser davantage)
+   - "Zone de résistance vers XX {sym}" (niveau au-dessus duquel le titre aurait du mal à monter)
+   - "Zone d'entrée potentielle entre XX {sym} et XX {sym}" si pertinent
+   - "Objectif des analystes : XX {sym}" si disponible
 4. Rédige 2-3 phrases de contexte en langage naturel accessible
 5. Mentionne la fiabilité historique si > 0 occurrences
 6. Termine TOUJOURS par cette phrase exacte sur une nouvelle ligne :
@@ -969,7 +972,7 @@ INSTRUCTIONS DE RÉDACTION :
 CONTRAINTES ABSOLUES :
 - Ne jamais utiliser les mots "acheter", "vendre", "investir", "placer"
 - Parler de "renforcement", "point d'entrée potentiel", "opportunité à étudier"
-- TOUJOURS donner des niveaux de prix concrets en euros
+- TOUJOURS donner des niveaux de prix concrets dans la devise du titre ({sym}), jamais convertis
 - Pas de jargon technique — traduire en langage courant
 - Ton professionnel mais accessible, sans exclamation
 - Maximum 250 mots
@@ -1013,7 +1016,7 @@ CONTRAINTES ABSOLUES :
         alerte.texte_ia = (
             f"{titre.nom} ({titre.ticker}) · Score {alerte.score_confluence}/10\n\n"
             f"Confluence de {len(signaux)} signal(s) détectée le {alerte.date_signal}.\n"
-            f"Cours au signal : {alerte.cours_au_signal} €\n\n"
+            f"Cours au signal : {alerte.cours_au_signal} {sym}\n\n"
             f"— Cette observation ne constitue pas un conseil d'investissement."
         )
         alerte.save(update_fields=['texte_ia'])
@@ -1107,9 +1110,10 @@ def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
         logger.info("[LLM] analyse_fondamentale %s : pas de fondamentaux", ticker)
         return None
 
-    # Cours actuel pour contextualiser
+    # Cours actuel pour contextualiser (devise de cotation du titre)
+    sym = titre.symbole_devise
     bougie = PrixJournalier.objects.filter(titre=titre).order_by('-date').first()
-    cours_str = f"{bougie.cloture} €" if bougie else "N/D"
+    cours_str = f"{bougie.cloture} {sym}" if bougie else "N/D"
 
     # Construire le contexte fondamentaux
     fond_data = {
@@ -1128,7 +1132,7 @@ def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
         "Rendement dividende": f"{fond.rendement_dividende}%" if fond.rendement_dividende else "N/D",
         "Payout ratio": f"{fond.payout_ratio}%" if fond.payout_ratio else "N/D",
         "Consensus analystes": fond.consensus or "N/D",
-        "Objectif cours moyen": f"{fond.objectif_cours_moyen} €" if fond.objectif_cours_moyen else "N/D",
+        "Objectif cours moyen": f"{fond.objectif_cours_moyen} {sym}" if fond.objectif_cours_moyen else "N/D",
         "Nb analystes": str(fond.nb_analystes) if fond.nb_analystes else "N/D",
         "Score qualité": f"{fond.score_qualite}/10" if fond.score_qualite else "N/D",
     }
@@ -1156,12 +1160,12 @@ Rédige une analyse qualitative en 4-6 phrases pour un DÉBUTANT en bourse :
 1. **Forces** : ce qui est solide (rentabilité, croissance, dividende, bilan sain)
 2. **Faiblesses** : ce qui est préoccupant (valorisation élevée, dette, marges faibles)
 3. **Positionnement** : comment se situe l'entreprise dans son secteur
-4. Si l'objectif des analystes est disponible, indique le potentiel en € et en %
+4. Si l'objectif des analystes est disponible, indique le potentiel en {sym} et en %
 5. Si des documents ont été ajoutés (rapports, études), intègre les informations clés dans l'analyse
 
 RÈGLES :
 - Langage SIMPLE, pas de jargon (explique PER, ROE etc. en mots simples si tu les mentionnes)
-- Donne des niveaux de prix en € quand pertinent
+- Donne des niveaux de prix dans la devise du titre ({sym}) quand pertinent
 - Pas de conseil d'investissement
 - Termine par : "⚠️ Cette analyse ne constitue pas un conseil d'investissement."
 - Réponds directement, pas de titre ni d'introduction"""
@@ -1174,7 +1178,8 @@ RÈGLES :
                 {"role": "system", "content": (
                     "Tu es un analyste financier qui rédige des analyses fondamentales "
                     "en langage simple pour des débutants. Tu ne donnes jamais de conseils "
-                    "d'investissement. Tu donnes des niveaux de prix en euros."
+                    "d'investissement. Tu donnes les niveaux de prix dans la devise de cotation "
+                    "du titre (€, $, £…), sans jamais les convertir."
                 )},
                 {"role": "user", "content": prompt},
             ],

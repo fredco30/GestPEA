@@ -35,6 +35,7 @@ export default function FicheTitre({ ticker }) {
   if (!titre)  return <div style={{ color: 'var(--color-text-tertiary)', padding: 24 }}>Titre introuvable.</div>
 
   const dernier         = titre.prix_historique?.[titre.prix_historique.length - 1]
+  const sym             = titre.symbole_devise || '€'
   const sentimentGlobal = titre.sentiments_30j?.[titre.sentiments_30j.length - 1]
   const fond            = titre.fondamentaux
 
@@ -215,7 +216,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span className="cours-principal" style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {dernier
-              ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
+              ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${sym}`
               : '—'}
           </span>
           {(() => {
@@ -349,15 +350,15 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           <>
             <div style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
             <PillMetrique label="Actions" valeur={nb.toLocaleString('fr-FR')} />
-            <PillMetrique label="PRU" valeur={prm ? `${prm.toFixed(2)} €` : '—'} />
+            <PillMetrique label="PRU" valeur={prm ? `${prm.toFixed(2)} ${sym}` : '—'} />
             <PillMetrique
               label="Valeur"
-              valeur={valeurPos ? `${valeurPos.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}
+              valeur={valeurPos ? `${valeurPos.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym}` : '—'}
             />
             {pmv != null && (
               <PillMetrique
                 label="PV/MV"
-                valeur={`${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)`}
+                valeur={`${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym} (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)`}
                 couleur={pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
               />
             )}

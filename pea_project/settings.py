@@ -141,6 +141,13 @@ from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
 
+    # --- Taux de change vers EUR : chaque soir lun-ven à 18h15 (avant l'agrégation) ---
+    # Convertit le portefeuille multi-devises (PEA EUR + CTO USD…) ; ~1 req EODHD/devise.
+    'fetch-taux-change': {
+        'task':     'app.tasks.fetch_taux_change_task',
+        'schedule': crontab(hour=18, minute=15, day_of_week='1-5'),
+    },
+
     # --- Cours EOD : chaque soir lun-ven à 18h30 (après clôture Euronext 17h35) ---
     'fetch-cours-eod': {
         'task':     'app.tasks.fetch_cours_eod_task',

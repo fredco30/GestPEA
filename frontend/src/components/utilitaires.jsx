@@ -352,7 +352,7 @@ function LigneSurveillance({ titre, alterne }) {
         <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{titre.ticker} &middot; {titre.secteur}</div>
       </div>
       <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 500 }}>
-        {dernier ? `${Number(dernier.cloture).toFixed(2)} \u20AC` : '\u2014'}
+        {dernier ? `${Number(dernier.cloture).toFixed(2)} ${titre.symbole_devise || '\u20AC'}` : '\u2014'}
       </div>
       <div style={{ textAlign: 'right', fontSize: 12, color: variation >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)' }}>
         {variation != null ? `${variation >= 0 ? '+' : ''}${variation.toFixed(2)}%` : '\u2014'}

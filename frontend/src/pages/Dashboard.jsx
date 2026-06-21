@@ -766,17 +766,80 @@ function PanneauPerformance({ titres, dashboard }) {
 
   const valeurTotale = dashboard?.valeur_totale_portefeuille ? Number(dashboard.valeur_totale_portefeuille) : 0
 
+  // Segmentation par enveloppe (PEA vs Compte-Titres). Un titre sans `compte` est traité comme PEA.
+  const groupes = [
+    { key: 'pea', label: 'PEA',                 icone: '🇪🇺', titres: titres.filter(t => (t.compte || 'pea') !== 'cto'), valeurEur: dashboard?.valeur_pea_eur },
+    { key: 'cto', label: 'Compte-titres (CTO)', icone: '🌍', titres: titres.filter(t => t.compte === 'cto'),            valeurEur: dashboard?.valeur_cto_eur },
+  ].filter(g => g.titres.length > 0)
+  const multiEnveloppe = groupes.length > 1
+
+  const fmtEur = (v) => v != null ? `${Number(v).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'
+
+  const renderRow = (t) => {
+    const cours = t.dernier_cours?.cloture || 0
+    const nb = t.nb_actions || 0
+    const pru = Number(t.prix_revient_moyen) || 0
+    const valeur = nb && cours ? nb * cours : null
+    const pmv = pru && valeur ? valeur - (nb * pru) : null
+    const pmvPct = pru && nb && cours ? ((cours - pru) / pru * 100) : null
+    const sym = t.symbole_devise || '€'
+    const mismatchPea = (t.compte || 'pea') === 'pea' && t.eligible_pea === false
+
+    return (
+      <tr key={t.ticker} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
+        <td style={{ padding: '10px 12px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+          {t.nom_court || t.ticker}
+          {mismatchPea && (
+            <span title="Titre classé PEA mais non éligible (pays hors UE/EEE) — à passer en CTO"
+              style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 8, background: 'var(--color-background-warning)', color: 'var(--color-text-warning)' }}>
+              ⚠ non éligible PEA
+            </span>
+          )}
+        </td>
+        <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{nb.toLocaleString('fr-FR')}</td>
+        <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{pru ? `${Number(pru).toFixed(2)} ${sym}` : '—'}</td>
+        <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 500 }}>{cours ? `${Number(cours).toFixed(2)} ${sym}` : '—'}</td>
+        <td style={{
+          padding: '10px 12px', fontWeight: 500,
+          color: (t.variation_jour || 0) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
+        }}>
+          {t.variation_jour != null ? `${t.variation_jour >= 0 ? '+' : ''}${t.variation_jour.toFixed(2)}%` : '—'}
+        </td>
+        <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{valeur ? `${valeur.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym}` : '—'}</td>
+        <td style={{
+          padding: '10px 12px', fontWeight: 600,
+          color: pmv != null ? (pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : 'var(--color-text-tertiary)',
+        }}>
+          {pmv != null ? `${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym} (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)` : '—'}
+        </td>
+        <td style={{ padding: '10px 12px' }}>
+          {t.score_conviction != null ? (
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+              background: t.score_conviction >= 70 ? 'var(--color-background-success)' : t.score_conviction >= 40 ? 'var(--color-background-warning)' : 'var(--color-background-danger)',
+              color: t.score_conviction >= 70 ? 'var(--color-text-success)' : t.score_conviction >= 40 ? 'var(--color-text-warning)' : 'var(--color-text-danger)',
+            }}>
+              {t.score_conviction}/100
+            </span>
+          ) : '—'}
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <div>
       <h2 style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 16 }}>
-        Performance PEA
+        Performance portefeuille
       </h2>
 
-      {/* Résumé global */}
+      {/* Résumé global — avec sous-totaux par enveloppe si portefeuille mixte PEA/CTO */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20,
+        display: 'grid', gridTemplateColumns: `repeat(${multiEnveloppe ? 4 : 3}, 1fr)`, gap: 12, marginBottom: 20,
       }}>
-        <CarteResume label="Valeur totale" valeur={`${valeurTotale.toLocaleString('fr-FR')} €`} />
+        <CarteResume label="Valeur totale (EUR)" valeur={`${valeurTotale.toLocaleString('fr-FR')} €`} />
+        {multiEnveloppe && <CarteResume label="dont PEA (EUR)" valeur={fmtEur(dashboard?.valeur_pea_eur)} />}
+        {multiEnveloppe && <CarteResume label="dont CTO (EUR)" valeur={fmtEur(dashboard?.valeur_cto_eur)} />}
         <CarteResume
           label="Variation jour"
           valeur={dashboard?.variation_jour_portefeuille
@@ -784,7 +847,7 @@ function PanneauPerformance({ titres, dashboard }) {
             : '—'}
           couleur={Number(dashboard?.variation_jour_portefeuille) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
         />
-        <CarteResume label="Titres en portefeuille" valeur={titres.length} />
+        {!multiEnveloppe && <CarteResume label="Titres en portefeuille" valeur={titres.length} />}
       </div>
 
       {/* Tableau par titre */}
@@ -805,49 +868,17 @@ function PanneauPerformance({ titres, dashboard }) {
             </tr>
           </thead>
           <tbody>
-            {titres.map(t => {
-              const cours = t.dernier_cours?.cloture || 0
-              const nb = t.nb_actions || 0
-              const pru = Number(t.prix_revient_moyen) || 0
-              const valeur = nb && cours ? nb * cours : null
-              const pmv = pru && valeur ? valeur - (nb * pru) : null
-              const pmvPct = pru && nb && cours ? ((cours - pru) / pru * 100) : null
-
-              return (
-                <tr key={t.ticker} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
-                  <td style={{ padding: '10px 12px', fontWeight: 500, color: 'var(--color-text-primary)' }}>
-                    {t.nom_court || t.ticker}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{nb.toLocaleString('fr-FR')}</td>
-                  <td style={{ padding: '10px 12px', color: 'var(--color-text-secondary)' }}>{pru ? `${Number(pru).toFixed(2)} €` : '—'}</td>
-                  <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 500 }}>{cours ? `${Number(cours).toFixed(2)} €` : '—'}</td>
-                  <td style={{
-                    padding: '10px 12px', fontWeight: 500,
-                    color: (t.variation_jour || 0) >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)',
-                  }}>
-                    {t.variation_jour != null ? `${t.variation_jour >= 0 ? '+' : ''}${t.variation_jour.toFixed(2)}%` : '—'}
-                  </td>
-                  <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{valeur ? `${valeur.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}</td>
-                  <td style={{
-                    padding: '10px 12px', fontWeight: 600,
-                    color: pmv != null ? (pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)') : 'var(--color-text-tertiary)',
-                  }}>
-                    {pmv != null ? `${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)` : '—'}
-                  </td>
-                  <td style={{ padding: '10px 12px' }}>
-                    {t.score_conviction != null ? (
-                      <span style={{
-                        fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                        background: t.score_conviction >= 70 ? 'var(--color-background-success)' : t.score_conviction >= 40 ? 'var(--color-background-warning)' : 'var(--color-background-danger)',
-                        color: t.score_conviction >= 70 ? 'var(--color-text-success)' : t.score_conviction >= 40 ? 'var(--color-text-warning)' : 'var(--color-text-danger)',
-                      }}>
-                        {t.score_conviction}/100
-                      </span>
-                    ) : '—'}
-                  </td>
-                </tr>
-              )
-            })}
+            {multiEnveloppe
+              ? groupes.flatMap(g => [
+                  <tr key={`hdr-${g.key}`} style={{ background: 'var(--color-background-secondary)' }}>
+                    <td colSpan={8} style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+                      {g.icone} {g.label} · {g.titres.length} titre{g.titres.length > 1 ? 's' : ''} · {fmtEur(g.valeurEur)}
+                      <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> (converti en EUR)</span>
+                    </td>
+                  </tr>,
+                  ...g.titres.map(renderRow),
+                ])
+              : titres.map(renderRow)}
           </tbody>
         </table>
       </div>

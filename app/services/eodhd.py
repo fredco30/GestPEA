@@ -458,6 +458,12 @@ class EODHDClient:
             if general.get(champ_api) and not getattr(titre_obj, champ_model):
                 champs[champ_model] = general[champ_api]
 
+        # Devise : toujours alignée sur EODHD (le défaut 'EUR' est truthy, donc
+        # le test « champ vide » ci-dessus ne suffit pas — on force la cotation réelle).
+        devise_api = (general.get("CurrencyCode") or "").upper()
+        if devise_api and devise_api != (titre_obj.devise or "").upper():
+            champs["devise"] = devise_api
+
         if champs:
             Titre.objects.filter(pk=titre_obj.pk).update(**champs)
 

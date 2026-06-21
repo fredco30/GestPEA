@@ -40,7 +40,7 @@ def fetch_cours_eod_task(self):
 
     try:
         tickers = list(
-            Titre.objects.filter(actif=True, eligible_pea=True)
+            Titre.objects.filter(actif=True)
             .exclude(statut='archive')
             .values_list('ticker', flat=True)
         )
@@ -121,7 +121,7 @@ def fetch_fondamentaux_lot_task(self, lot: str):
 
     try:
         tickers = list(
-            Titre.objects.filter(actif=True, lot=lot, eligible_pea=True)
+            Titre.objects.filter(actif=True, lot=lot)
             .exclude(statut='archive')
             .values_list('ticker', flat=True)
         )
@@ -205,7 +205,7 @@ def fetch_news_task(self):
 
     try:
         tickers = list(
-            Titre.objects.filter(actif=True, eligible_pea=True)
+            Titre.objects.filter(actif=True)
             .exclude(statut='archive')
             .values_list('ticker', flat=True)
         )
@@ -798,7 +798,11 @@ def import_historique_task(self, ticker: str):
 
 @shared_task(bind=True)
 def update_eligibles_pea_task(self):
-    """Met à jour l'éligibilité PEA de tous les titres en base."""
+    """Met à jour l'éligibilité PEA de tous les titres en base.
+
+    Note : `eligible_pea` est désormais une INFO fiscale (badge, alerte CTO mal classé) ;
+    il ne filtre plus la collecte de cours/fondamentaux/news — les titres US sont suivis.
+    """
     from app.services.eodhd import EODHDClient
     try:
         client = EODHDClient()
@@ -806,6 +810,27 @@ def update_eligibles_pea_task(self):
         return {'status': 'ok', 'stats': stats, 'requetes': client.nb_requetes_session}
     except Exception as exc:
         logger.error(f"[Task] update_eligibles_pea — erreur : {exc}", exc_info=True)
+        raise self.retry(exc=exc)
+
+
+# ---------------------------------------------------------------------------
+# 10 bis. TAUX DE CHANGE — conversion multi-devises (portefeuille PEA + CTO US)
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=300)
+def fetch_taux_change_task(self):
+    """
+    Rafraîchit les taux de change vers l'EUR pour les devises présentes en
+    portefeuille/surveillance (hors EUR). 1 requête EODHD Forex par devise.
+    À planifier 1×/jour (ex. avant l'agrégation du dashboard).
+    """
+    from app.services.devises import rafraichir_taux_change
+    try:
+        stats = rafraichir_taux_change()
+        logger.info("[Task] fetch_taux_change : %s", stats)
+        return {'status': 'ok', 'stats': stats}
+    except Exception as exc:
+        logger.error(f"[Task] fetch_taux_change — erreur : {exc}", exc_info=True)
         raise self.retry(exc=exc)
 
 

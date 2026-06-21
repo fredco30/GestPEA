@@ -120,39 +120,43 @@ def _score_historique(ticker):
 
 
 def _get_niveaux_prix(ticker):
-    """Récupère les niveaux de prix clés pour un titre."""
+    """Récupère les niveaux de prix clés pour un titre, dans sa devise de cotation."""
     from app.models import PrixJournalier, Fondamentaux
+    from app.services.devises import symbole_pour_ticker
     bougie = PrixJournalier.objects.filter(titre__ticker=ticker).order_by('-date').first()
     fond = Fondamentaux.objects.filter(titre__ticker=ticker).order_by('-date_maj').first()
     if not bougie:
         return ""
-    lines = [f"Cours actuel : {bougie.cloture} €"]
+    sym = symbole_pour_ticker(ticker)
+    lines = [f"Cours actuel : {bougie.cloture} {sym}"]
     if bougie.mm_20:
-        lines.append(f"Moyenne 20 jours (tendance court terme) : {bougie.mm_20} €")
+        lines.append(f"Moyenne 20 jours (tendance court terme) : {bougie.mm_20} {sym}")
     if bougie.mm_50:
-        lines.append(f"Moyenne 50 jours (tendance moyen terme) : {bougie.mm_50} €")
+        lines.append(f"Moyenne 50 jours (tendance moyen terme) : {bougie.mm_50} {sym}")
     if bougie.mm_200:
-        lines.append(f"Moyenne 200 jours (support long terme) : {bougie.mm_200} €")
+        lines.append(f"Moyenne 200 jours (support long terme) : {bougie.mm_200} {sym}")
     if bougie.boll_inf:
-        lines.append(f"Plancher technique (Bollinger bas) : {bougie.boll_inf} €")
+        lines.append(f"Plancher technique (Bollinger bas) : {bougie.boll_inf} {sym}")
     if bougie.boll_sup:
-        lines.append(f"Plafond technique (Bollinger haut) : {bougie.boll_sup} €")
+        lines.append(f"Plafond technique (Bollinger haut) : {bougie.boll_sup} {sym}")
     if fond and fond.objectif_cours_moyen:
-        lines.append(f"Objectif moyen des analystes : {fond.objectif_cours_moyen} €")
+        lines.append(f"Objectif moyen des analystes : {fond.objectif_cours_moyen} {sym}")
     return "\n".join(lines)
 
 
 def _generer_explication(ticker, score_total, composantes):
     """Génère une explication IA du score en 2-3 phrases via Mistral."""
+    from app.services.devises import symbole_pour_ticker
     niveaux = _get_niveaux_prix(ticker)
+    sym = symbole_pour_ticker(ticker)
 
     prompt = f"""Score de conviction pour {ticker} : {score_total}/100.
 Composantes : technique {composantes.get('technique', 'N/A')}/25, fondamentaux {composantes.get('fondamentaux', 'N/A')}/35, sentiment presse {composantes.get('sentiment', 'N/A')}/20, historique {composantes.get('historique', 'N/A')}/20.
 
-NIVEAUX DE PRIX :
+NIVEAUX DE PRIX (devise du titre : {sym}) :
 {niveaux}
 
-CONTEXTE : L'utilisateur est un investisseur PEA long terme qui cherche les meilleurs points d'entrée.
+CONTEXTE : L'utilisateur est un investisseur long terme qui cherche les meilleurs points d'entrée.
 
 Rédige une analyse concise en 3-4 phrases, en langage accessible :
 
@@ -161,12 +165,12 @@ Rédige une analyse concise en 3-4 phrases, en langage accessible :
 2. POINTS D'ENTRÉE : Identifie les meilleurs niveaux de prix pour entrer ou renforcer :
    - Si le cours est proche de la MM20 en tendance haussière → signaler le pullback comme zone d'entrée
    - Si le cours est sous la MM20 → indiquer la MM20 comme résistance à reconquérir
-   - Indiquer les supports concrets en euros (MM50, Bollinger bas, plus bas récents)
-   - Exemple : "Une zone d'entrée intéressante se situerait entre XX € (MM20) et XX € (support)"
+   - Indiquer les supports concrets dans la devise du titre ({sym}) (MM50, Bollinger bas, plus bas récents)
+   - Exemple : "Une zone d'entrée intéressante se situerait entre XX {sym} (MM20) et XX {sym} (support)"
 
 3. RÉSISTANCES : Indiquer les niveaux à surveiller au-dessus (objectif analystes, plafond technique).
 
-Tous les niveaux doivent être en euros. Termine par un disclaimer : *Cette analyse ne constitue pas un conseil d'investissement.*
+Tous les niveaux doivent être dans la devise de cotation du titre ({sym}), jamais convertis. Termine par un disclaimer : *Cette analyse ne constitue pas un conseil d'investissement.*
 Réponds directement sans titre ni introduction."""
 
     try:
@@ -174,7 +178,7 @@ Réponds directement sans titre ni introduction."""
         response = client.chat.complete(
             model=MODEL_CONVICTION,
             messages=[
-                {"role": "system", "content": "Tu es un analyste financier expert en analyse technique. Tu aides un investisseur PEA long terme à identifier les meilleurs points d'entrée en utilisant les moyennes mobiles (MM20, MM50, MM200) et les niveaux de support/résistance. Tu donnes toujours des niveaux de prix concrets en euros."},
+                {"role": "system", "content": "Tu es un analyste financier expert en analyse technique. Tu aides un investisseur long terme à identifier les meilleurs points d'entrée en utilisant les moyennes mobiles (MM20, MM50, MM200) et les niveaux de support/résistance. Tu donnes toujours des niveaux de prix concrets dans la devise de cotation du titre (€, $, £…), jamais convertis."},
                 {"role": "user", "content": prompt},
             ],
             max_tokens=MAX_TOKENS,

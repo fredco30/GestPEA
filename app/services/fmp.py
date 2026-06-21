@@ -75,9 +75,12 @@ class FMPClient:
     @staticmethod
     def _ticker_fmp(ticker: str) -> str:
         """
-        Convertit un ticker EODHD (MC.PA) en ticker FMP (MC.PA).
-        FMP utilise le meme format pour les marches europeens.
+        Convertit un ticker EODHD en ticker FMP.
+        - Marches europeens : meme format (MC.PA, ASML.AS…).
+        - Actions US : FMP attend le symbole NU (AAPL), pas AAPL.US → on strippe '.US'.
         """
+        if ticker.upper().endswith('.US'):
+            return ticker[:-3]
         return ticker
 
     # ------------------------------------------------------------------
