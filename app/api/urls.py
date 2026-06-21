@@ -48,6 +48,10 @@ urlpatterns = [
          views.TitreViewSet.as_view({'post': 'analyser'}),
          name='titre-analyser'),
 
+    path('titres/<str:pk>/tradingagents/',
+         views.TitreViewSet.as_view({'post': 'tradingagents'}),
+         name='titre-tradingagents'),
+
     # --- Alertes ---
     path('alertes/',
          views.AlerteListView.as_view(),

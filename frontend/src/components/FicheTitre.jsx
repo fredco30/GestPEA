@@ -93,7 +93,7 @@ export default function FicheTitre({ ticker }) {
       )}
 
       {/* ---- Analyse approfondie TradingAgents ---- */}
-      <AnalyseApprofondie titre={titre} ticker={ticker} />
+      <AnalyseApprofondie key={ticker} titre={titre} ticker={ticker} />
 
       {/* ---- Graphique technique ---- */}
       {ohlc && (
@@ -169,12 +169,18 @@ function AnalyseApprofondie({ titre, ticker }) {
     try {
       await analyserTradingAgents(ticker)
       setStatut('en_cours')
+      setDateAnalyse(new Date().toISOString())   // date fraîche → non périmé
     } catch (e) {
       setErreur(e.message || 'Erreur au lancement')
     }
   }
 
-  const enCours = statut === 'en_cours'
+  // Une analyse "en_cours" depuis plus de 15 min est jugée périmée (worker/broker
+  // indisponible) → on réautorise la relance plutôt que de geler le bouton.
+  const enCoursBrut = statut === 'en_cours'
+  const dateMs = dateAnalyse ? new Date(dateAnalyse).getTime() : 0
+  const perime = enCoursBrut && dateMs > 0 && (Date.now() - dateMs > 15 * 60 * 1000)
+  const enCours = enCoursBrut && !perime
   const noteU = (note || '').toLowerCase()
   const couleurNote = /buy|overweight/.test(noteU) ? 'success'
     : /sell|underweight/.test(noteU) ? 'danger'

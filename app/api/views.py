@@ -42,6 +42,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -557,11 +558,26 @@ class TitreViewSet(ViewSet):
                 status=status.HTTP_200_OK,
             )
 
+        # Date de lancement posée maintenant : permet de détecter une analyse "périmée"
+        # (worker/broker indisponible) et de réautoriser une relance côté front.
         titre.ta_statut = 'en_cours'
-        titre.save(update_fields=['ta_statut'])
+        titre.ta_date_analyse = timezone.now()
+        titre.save(update_fields=['ta_statut', 'ta_date_analyse'])
 
-        from app.tasks import analyse_tradingagents_task
-        analyse_tradingagents_task.delay(titre.ticker, request.data.get('date') or None)
+        # Filet de sécurité : si l'enqueue Celery échoue, on ne laisse pas le titre
+        # bloqué en 'en_cours' (sinon bouton gelé + garde-fou anti-relance actif).
+        try:
+            from app.tasks import analyse_tradingagents_task
+            analyse_tradingagents_task.delay(titre.ticker, request.data.get('date') or None)
+        except Exception as e:
+            logger.error("[API] enqueue tradingagents %s échoué : %s", titre.ticker, e)
+            titre.ta_statut = 'erreur'
+            titre.ta_rapport = "Impossible de lancer l'analyse (file de tâches indisponible). Réessayez."
+            titre.save(update_fields=['ta_statut', 'ta_rapport'])
+            return Response(
+                {'ta_statut': 'erreur', 'message': "File de tâches indisponible — réessayez plus tard."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {'ta_statut': 'en_cours',
