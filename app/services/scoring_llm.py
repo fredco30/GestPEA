@@ -107,7 +107,7 @@ def _parse_resultats(texte: str) -> list:
         try:
             obj, _ = json.JSONDecoder().raw_decode(texte[debut:])
             if isinstance(obj, list):
-                return obj
+                return [o for o in obj if isinstance(o, dict)]
         except json.JSONDecodeError:
             pass
 
@@ -432,6 +432,8 @@ Règles de scoring :
         now = timezone.now()
 
         for res in resultats:
+            if not isinstance(res, dict):
+                continue  # Mistral renvoie parfois une chaîne dans le tableau
             idx   = res.get("id")
             score = res.get("score")
             tags  = res.get("tags", [])
