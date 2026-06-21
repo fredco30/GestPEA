@@ -32,12 +32,17 @@ MAX_TOKENS = 500
 # Pondération centralisée du score de conviction (somme = 100).
 # Facile à ajuster ici sans toucher au reste du code.
 POIDS_CONVICTION = {
-    'technique':    20,
+    'technique':    15,
     'fondamentaux': 30,
     'sentiment':    20,
-    'documents':    15,   # impact des documents uploadés (signal propre, hors presse)
+    'documents':    20,   # impact des documents uploadés (signal propre, hors presse)
     'historique':   15,
 }
+
+# En dessous de ce seuil d'impact (|score|), un document est jugé NEUTRE et exclu
+# du calcul (traité comme « pas de signal », pas comme « neutre à 50 % ») — évite
+# qu'un rapport sans portée tire le score vers le milieu.
+SEUIL_DOC_NEUTRE = 0.10
 
 
 def _score_technique(ticker):
@@ -167,13 +172,20 @@ def _score_documents(ticker):
     if titre.score_documents is None:
         return None, {}
 
-    # -1..+1 → 0..poids
-    score_norm = round((float(titre.score_documents) + 1) / 2 * POIDS_CONVICTION['documents'])
-    return score_norm, {
-        'score_brut': float(titre.score_documents),
+    brut = float(titre.score_documents)
+    details = {
+        'score_brut': brut,
         'nb_documents': DocumentTitre.objects.filter(titre=titre).count(),
         'analyse': titre.analyse_documents_ia,
     }
+
+    # Document neutre → pas de signal : exclu du score (l'analyse reste visible)
+    if abs(brut) < SEUIL_DOC_NEUTRE:
+        return None, {**details, 'neutre': True}
+
+    # -1..+1 → 0..poids
+    score_norm = round((brut + 1) / 2 * POIDS_CONVICTION['documents'])
+    return score_norm, details
 
 
 def _get_niveaux_prix(ticker):
