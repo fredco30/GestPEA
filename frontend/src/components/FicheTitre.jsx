@@ -126,6 +126,86 @@ export default function FicheTitre({ ticker }) {
       {/* ---- Fondamentaux ---- */}
       {fond && <CarteFondamentaux fond={fond} />}
 
+      {/* ---- Analyse documentaire (impact des PDF sur le score) ---- */}
+      <AnalyseDocuments titre={titre} />
+
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Analyse documentaire : impact des documents uploadés (composante du score)
+// ---------------------------------------------------------------------------
+function AnalyseDocuments({ titre }) {
+  const analyse = titre.analyse_documents_ia
+  const score   = titre.score_documents
+  if (!analyse && (score === null || score === undefined)) return null
+
+  const s = (score !== null && score !== undefined) ? Number(score) : null
+  const neutre = s !== null && Math.abs(s) < 0.10
+  const couleur = s === null || neutre ? 'warning' : s >= 0.10 ? 'success' : 'danger'
+  const libelle = s === null ? '—'
+    : s >= 0.40 ? 'Très favorable'
+    : s >= 0.10 ? 'Favorable'
+    : s <= -0.40 ? 'Défavorable'
+    : s <= -0.10 ? 'Plutôt défavorable'
+    : 'Neutre'
+
+  // Position du curseur sur l'échelle -1 → +1 (0 % à 100 %)
+  const pct = s === null ? 50 : Math.max(0, Math.min(100, (s + 1) / 2 * 100))
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)', padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          📄 Analyse documentaire
+          <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> · tes documents déposés</span>
+        </span>
+        <div style={{ flex: 1 }} />
+        {s !== null && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 12,
+            background: `var(--color-background-${couleur})`, color: `var(--color-text-${couleur})`,
+          }}>
+            {libelle} ({s >= 0 ? '+' : ''}{s.toFixed(2)})
+          </span>
+        )}
+      </div>
+
+      {/* Échelle visuelle -1 → +1 */}
+      {s !== null && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ position: 'relative', height: 6, borderRadius: 4,
+            background: 'linear-gradient(90deg, var(--color-text-danger), var(--color-background-secondary) 50%, var(--color-text-success))' }}>
+            <div style={{
+              position: 'absolute', left: `${pct}%`, top: -3, transform: 'translateX(-50%)',
+              width: 12, height: 12, borderRadius: '50%',
+              background: 'var(--color-background-primary)',
+              border: `2px solid var(--color-text-${couleur})`,
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 3 }}>
+            <span>négatif</span><span>neutre</span><span>positif</span>
+          </div>
+        </div>
+      )}
+
+      {analyse && (
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+          {analyse}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8 }}>
+        {neutre
+          ? 'Impact jugé neutre → n’influence pas le score de conviction.'
+          : 'Compte pour 20 % du score de conviction.'}
+        {titre.date_score_documents && ` · évalué le ${new Date(titre.date_score_documents).toLocaleDateString('fr-FR')}`}
+      </div>
     </div>
   )
 }
