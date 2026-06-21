@@ -23,6 +23,7 @@ Dépendances :
 
 import json
 import logging
+import time
 from datetime import date, timedelta
 from typing import Optional
 
@@ -132,6 +133,31 @@ def _parse_resultats(texte: str) -> list:
     return resultats
 
 
+def _mistral_complete(client, **kwargs):
+    """
+    Appel Mistral avec retry/back-off sur rate-limit (HTTP 429).
+    Mistral plafonne le débit : sur de gros volumes (scoring en lot), on se fait
+    jeter en 429. On réessaie avec des délais croissants plutôt que de perdre le lot.
+    Les erreurs non-429 sont relevées immédiatement.
+    """
+    delais = [2, 5, 10, 20]
+    derniere = None
+    for i in range(len(delais) + 1):
+        try:
+            return client.chat.complete(**kwargs)
+        except Exception as e:
+            derniere = e
+            msg = str(e).lower()
+            est_429 = ("429" in msg) or ("rate limit" in msg) or ("rate_limited" in msg) or ("too many" in msg)
+            if est_429 and i < len(delais):
+                logger.warning("[LLM] Rate-limit Mistral — attente %ss (tentative %d/%d)",
+                               delais[i], i + 1, len(delais))
+                time.sleep(delais[i])
+                continue
+            raise
+    raise derniere
+
+
 # ---------------------------------------------------------------------------
 # 0. FILTRAGE PERTINENCE DES ARTICLES (IA)
 # ---------------------------------------------------------------------------
@@ -219,7 +245,8 @@ Exemple : [0, 2, 4]
 Si aucun article n'est pertinent : []"""
 
     try:
-        response = client.chat.complete(
+        response = _mistral_complete(
+            client,
             model=MODEL_SCORING,
             max_tokens=200,
             messages=[
@@ -321,10 +348,11 @@ def scorer_articles(article_ids: list[int]) -> int:
     articles_list = articles_pertinents
     nb_ok = 0
 
-    # Traitement par batch
+    # Traitement par batch (throttle léger pour ménager le rate-limit Mistral)
     for i in range(0, len(articles_list), BATCH_SIZE):
         batch = articles_list[i:i + BATCH_SIZE]
         nb_ok += _scorer_batch(client, batch)
+        time.sleep(1.0)
 
     # Après scoring, recalculer les scores agrégés par titre et par jour
     tickers_touches = list({a.titre.ticker for a in articles_list})
@@ -378,7 +406,8 @@ Règles de scoring :
 - Réponds UNIQUEMENT avec le JSON, sans texte avant ou après"""
 
     try:
-        response = client.chat.complete(
+        response = _mistral_complete(
+            client,
             model=MODEL_SCORING,
             max_tokens=MAX_TOKENS,
             messages=[

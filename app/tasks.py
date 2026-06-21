@@ -1053,16 +1053,19 @@ def fetch_news_gratuites_task(self):
         except Exception as e:
             logger.error("[Task] news_gratuites veille sectorielle : %s", e)
 
-        # Scorer les nouveaux articles
+        # Scorer les nouveaux articles — PLAFOND par run (anti rate-limit Mistral) :
+        # on score au plus 150 articles (les plus récents d'abord) ; un éventuel
+        # reliquat sera traité au run suivant, sans saturer l'API.
         if nb_total > 0:
             ids = list(
                 Article.objects.filter(score_sentiment__isnull=True)
-                .values_list('id', flat=True)
+                .order_by('-date_collecte')
+                .values_list('id', flat=True)[:150]
             )
             if ids:
                 from app.services.scoring_llm import scorer_articles
                 scorer_articles(ids)
-                logger.info(f"[Task] news_gratuites : {len(ids)} articles scorés")
+                logger.info(f"[Task] news_gratuites : {len(ids)} articles soumis au scoring")
 
             # Mettre à jour le sentiment mixte
             for ticker in tickers:
