@@ -783,7 +783,9 @@ function PanneauPerformance({ titres, dashboard }) {
     const pmv = pru && valeur ? valeur - (nb * pru) : null
     const pmvPct = pru && nb && cours ? ((cours - pru) / pru * 100) : null
     const sym = t.symbole_devise || '€'
-    const mismatchPea = (t.compte || 'pea') === 'pea' && t.eligible_pea === false
+    // Badge uniquement si le pays est CONNU et non-éligible (évite les faux positifs
+    // sur un titre au pays non résolu, ex. ISIN brut sans métadonnées).
+    const mismatchPea = (t.compte || 'pea') === 'pea' && t.eligible_pea === false && !!t.pays
 
     return (
       <tr key={t.ticker} style={{ borderBottom: '0.5px solid var(--color-border-tertiary)' }}>
