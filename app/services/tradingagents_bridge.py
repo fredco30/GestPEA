@@ -172,13 +172,18 @@ def analyser_titre(ticker: str, analyse_date: str = None) -> dict:
     """
     from datetime import date as date_cls
     from app.models import Titre
+    from app.services.yfinance_client import YFinanceClient
 
     titre = Titre.objects.get(ticker=ticker)
     if not analyse_date:
         analyse_date = date_cls.today().isoformat()
 
+    # TradingAgents s'appuie sur yfinance : convertir le suffixe EODHD → Yahoo
+    # (US sans suffixe, Allemagne .XETRA→.DE, Londres .LSE→.L ; Euronext inchangé).
+    ticker_ta = YFinanceClient._ticker_yahoo(titre.ticker)
+
     try:
-        data = lancer_analyse(titre.ticker, analyse_date)
+        data = lancer_analyse(ticker_ta, analyse_date)
     except Exception as e:
         logger.error("[TA] Analyse %s échouée : %s", ticker, e)
         titre.ta_statut = "erreur"
