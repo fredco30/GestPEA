@@ -338,9 +338,9 @@ def calculer_score_conviction(ticker):
     titre.date_calcul_conviction = timezone.now()
     titre.save(update_fields=['score_conviction', 'explication_conviction', 'date_calcul_conviction'])
 
-    logger.info("Conviction %s : %d/100 (tech=%s, fonda=%s, sent=%s, hist=%s)",
+    logger.info("Conviction %s : %d/100 (tech=%s, fonda=%s, sent=%s, docs=%s, hist=%s)",
                 ticker, score_total,
-                tech_score, fonda_score, sent_score, hist_score)
+                tech_score, fonda_score, sent_score, doc_score, hist_score)
 
     return {
         'score': score_total,
