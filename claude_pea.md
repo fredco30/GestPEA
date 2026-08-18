@@ -593,4 +593,25 @@ Les documents uploadés (essais cliniques, résultats — signaux **absents de l
 
 ---
 
+## 14. Phase 4 — Réparation file Celery + TradingAgents opérationnel (18 août 2026)
+
+Deux pannes distinctes empêchaient l'analyse approfondie (« file de tâches indisponible ») ET figeaient les cours depuis le 8 juillet.
+
+### 14.1 File Celery en panne — port Redis incorrect
+- **Symptôme** : bouton « Lancer l'analyse » → « Impossible de lancer l'analyse (file de tâches indisponible) » ; cours figés au 08/07/2026 ; worker Celery RUNNING mais 0 tâche consommée.
+- **Cause racine** : `REDIS_URL` dans `/var/www/pea/.env` pointait sur `redis://127.0.0.1:6380/0`, mais **aucun Redis n'écoute sur 6380** — l'instance systemd tourne sur **6379** (`redis-server.service`, port 6379 dans `/etc/redis/redis.conf`). L'enqueue `task.delay()` levait une `RuntimeError` (retry-limit Celery) → message 503 côté API.
+- **Correctif (serveur, hors git car .env)** : `REDIS_URL` repointé sur `redis://127.0.0.1:6379/0` + `supervisorctl restart pea_celery_worker pea_celery_beat pea_gunicorn`. Backup : `/var/www/pea/.env.bak-6380fix`.
+- **Effet de bord attendu** : les tâches planifiées (`fetch_cours_eod_task`, etc.) repartent → les cours se rafraîchissent. Les news fraîches continuaient car collectées en synchrone (autre chemin).
+
+### 14.2 429 Mistral systématique — aucune analyse TA n'aboutissait
+- **Cause racine** : le provider `mistral` de TradingAgents est servi par `ChatOpenAI` (endpoint OpenAI-compatible `https://api.mistral.ai/v1`) **sans retry 429** suffisant (défaut SDK ≈2). Une rafale multi-agents saturait le tier Mistral → `RateLimitError 429` → run KO. Aucune analyse n'était jamais passée en `ta_statut="ok"`.
+- **Correctif (patch dans le venv serveur, HORS git)** : `site-packages/tradingagents/graph/trading_graph.py` → `_get_provider_kwargs()` ajoute `max_retries=8` pour `provider == "mistral"` (backoff exponentiel natif de `ChatOpenAI`, qui forward `max_retries` via `_PASSTHROUGH_KWARGS`).
+- ⚠️ **Ce patch est écrasé à toute réinstall/mise à jour de TradingAgents** (`pip install -U tradingagents`). Le réappliquer après chaque upgrade. Vérifié : run APLD ~3,5 min, `ta_statut="termine"`, note Sell, rapport FR complet.
+
+### Décision clé Phase 4
+- **Port Redis canonique = 6379** (instance systemd). Ne plus jamais pointer la config sur 6380.
+- **Le correctif `max_retries` vit sur le serveur** : cette section sert de mémo. En cas de réinstall TradingAgents, rouvrir `trading_graph.py` et réinsérer le bloc `if provider == "mistral": kwargs.setdefault("max_retries", 8)` avant le bloc temperature.
+
+---
+
 *Ce fichier est mis à jour à chaque session de travail. Pour reprendre le codage, partager ce fichier en contexte avec Claude et indiquer l'étape souhaitée.*
