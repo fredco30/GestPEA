@@ -42,6 +42,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -193,6 +194,7 @@ class TitreViewSet(ViewSet):
         champs_autorises = {
             'statut', 'notes', 'nb_actions',
             'prix_revient_moyen', 'date_premier_achat', 'lot',
+            'compte', 'devise',   # reclasser PEA↔CTO / corriger la devise si auto-détection erronée
         }
         data_filtree = {k: v for k, v in request.data.items() if k in champs_autorises}
 
@@ -539,6 +541,50 @@ class TitreViewSet(ViewSet):
 
         return Response(resultats)
 
+    @action(detail=True, methods=['post'], url_path='tradingagents')
+    def tradingagents(self, request, pk=None):
+        """
+        POST /api/titres/{ticker}/tradingagents/
+        Lance l'analyse approfondie multi-agents (TradingAgents) en tâche de fond
+        (2-5 min, quelques centimes). Le résultat (note + rapport FR) devient
+        ensuite lisible via la fiche du titre (champs ta_note / ta_rapport).
+        """
+        titre = get_object_or_404(Titre, ticker=pk.upper(), actif=True)
+
+        # Garde-fou : pas de double lancement
+        if titre.ta_statut == 'en_cours':
+            return Response(
+                {'ta_statut': 'en_cours', 'message': 'Une analyse approfondie est déjà en cours.'},
+                status=status.HTTP_200_OK,
+            )
+
+        # Date de lancement posée maintenant : permet de détecter une analyse "périmée"
+        # (worker/broker indisponible) et de réautoriser une relance côté front.
+        titre.ta_statut = 'en_cours'
+        titre.ta_date_analyse = timezone.now()
+        titre.save(update_fields=['ta_statut', 'ta_date_analyse'])
+
+        # Filet de sécurité : si l'enqueue Celery échoue, on ne laisse pas le titre
+        # bloqué en 'en_cours' (sinon bouton gelé + garde-fou anti-relance actif).
+        try:
+            from app.tasks import analyse_tradingagents_task
+            analyse_tradingagents_task.delay(titre.ticker, request.data.get('date') or None)
+        except Exception as e:
+            logger.error("[API] enqueue tradingagents %s échoué : %s", titre.ticker, e)
+            titre.ta_statut = 'erreur'
+            titre.ta_rapport = "Impossible de lancer l'analyse (file de tâches indisponible). Réessayez."
+            titre.save(update_fields=['ta_statut', 'ta_rapport'])
+            return Response(
+                {'ta_statut': 'erreur', 'message': "File de tâches indisponible — réessayez plus tard."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            {'ta_statut': 'en_cours',
+             'message': 'Analyse approfondie lancée — résultat dans 2 à 5 minutes.'},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
     @action(detail=True, methods=['get', 'patch'], url_path='config')
     def config_alertes(self, request, pk=None):
         """
@@ -714,30 +760,38 @@ class DashboardView(APIView):
     """
 
     def get(self, request):
+        from collections import defaultdict
+        from app.services.devises import convertir_en_eur
+
         titres_pf = Titre.objects.filter(statut='portefeuille', actif=True)
         titres_sv = Titre.objects.filter(statut='surveillance', actif=True)
 
-        # Valeur totale du portefeuille
+        # Valeur totale du portefeuille — convertie en EUR pour un total homogène
+        # (PEA en EUR + Compte-Titres en USD/autres devises).
         valeur_totale   = Decimal('0')
         variation_totale = Decimal('0')
+        valeur_par_compte = defaultdict(lambda: Decimal('0'))   # 'pea'/'cto' → valeur EUR
+        nb_par_compte     = defaultdict(int)
         for t in titres_pf:
+            nb_par_compte[t.compte] += 1
             vp = t.valeur_position
             if vp:
-                valeur_totale += Decimal(str(vp))
-            # Variation du jour : utiliser cloture_veille si disponible (plus fiable)
+                v_eur = convertir_en_eur(vp, t.devise) or Decimal('0')
+                valeur_totale += v_eur
+                valeur_par_compte[t.compte] += v_eur
+            # Variation du jour : cloture_veille si disponible (plus fiable), sinon
+            # bougie précédente — convertie en EUR pour un total homogène.
             derniere = t.prix_journaliers.order_by('-date').first()
             if derniere and t.nb_actions:
-                if derniere.cloture_veille:
-                    variation_totale += (
-                        Decimal(str(derniere.cloture)) - Decimal(str(derniere.cloture_veille))
-                    ) * t.nb_actions
-                else:
-                    # Fallback : comparer avec la bougie précédente
+                base_veille = derniere.cloture_veille
+                if not base_veille:
                     avant_hier = t.prix_journaliers.order_by('-date')[1:2].first()
-                    if avant_hier:
-                        variation_totale += (
-                            Decimal(str(derniere.cloture)) - Decimal(str(avant_hier.cloture))
-                        ) * t.nb_actions
+                    base_veille = avant_hier.cloture if avant_hier else None
+                if base_veille:
+                    var_native = (
+                        Decimal(str(derniere.cloture)) - Decimal(str(base_veille))
+                    ) * t.nb_actions
+                    variation_totale += convertir_en_eur(var_native, t.devise) or Decimal('0')
 
         # Alertes
         alertes_nouvelles = Alerte.objects.filter(statut='nouvelle')
@@ -761,6 +815,10 @@ class DashboardView(APIView):
         data = {
             'valeur_totale_portefeuille':  valeur_totale if valeur_totale else None,
             'variation_jour_portefeuille': variation_totale if variation_totale else None,
+            'valeur_pea_eur':              valeur_par_compte.get('pea') or None,
+            'valeur_cto_eur':              valeur_par_compte.get('cto') or None,
+            'nb_titres_pea':               nb_par_compte.get('pea', 0),
+            'nb_titres_cto':               nb_par_compte.get('cto', 0),
             'nb_titres_portefeuille':      titres_pf.count(),
             'nb_titres_surveillance':      titres_sv.count(),
             'nb_alertes_nouvelles':        alertes_nouvelles.count(),

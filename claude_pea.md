@@ -2,7 +2,8 @@
 
 > Fichier de référence généré et maintenu au fil des échanges avec Claude.  
 > Objectif : disposer d'un historique complet des décisions d'architecture pour lancer le codage sans avoir à tout réexpliquer.  
-> **Dernière mise à jour : 3 avril 2026 — DEPLOYE SUR VPS ✅ — Phase 1 terminée — Phase 2 IA avancée en cours — Mobile responsive + PWA**
+> **Dernière mise à jour : 21 juin 2026 — DEPLOYE SUR VPS ✅ — Phase 1 & 2 terminées — Phase 3 : Multinational (PEA + CTO US) + TradingAgents + documents dans le score**
+> Branche déployée : `main` (alignée sur `claude/multinational-cto`). Migrations suivies dans git (`0001`→`0004`).
 
 ---
 
@@ -551,6 +552,65 @@ Exploiter pleinement l'IA (Mistral) pour transformer les données brutes en aide
 - **PWA** : manifest.json + service worker (cache network-first). Icône chatbot.png. Raccourci écran d'accueil.
 - **Reddit désactivé** : API publique bloquée 403 depuis 2024. Google News + NewsAPI couvrent les besoins.
 - **CSG 2026** : surveiller la hausse proposée de 9,2% à 10,6% (prélèvements sociaux de 17,2% → 18,6% si votée).
+
+---
+
+## 13. Phase 3 — Multinational + TradingAgents + fiabilisation (21 juin 2026)
+
+### 13.1 Univers multinational (PEA + Compte-Titres US)
+L'app n'est plus limitée au PEA européen : ajout d'un Compte-Titres (CTO) pour les actions US.
+- **Modèle** : `Titre.devise` (auto via EODHD `CurrencyCode` / FMP `currency`), `Titre.compte` (pea/cto — auto : cto si non éligible PEA), propriété `Titre.symbole_devise` (€/$/£…). **Migration `0002`**.
+- **Collecte débloquée** : retrait des filtres `eligible_pea=True` des tâches Celery (cours/fonda/news). `eligible_pea` n'est plus qu'une **info fiscale** (badge « non éligible PEA » si pays connu hors UE/EEE).
+- **Devise dynamique** : tous les affichages front + prompts LLM utilisent `symbole_devise` — niveaux de prix dans la devise du titre, jamais convertis.
+- **Agrégation multi-devises** : total portefeuille converti en EUR via modèle `TauxChange` + `app/services/devises.py` (EODHD Forex `EURUSD.FOREX`, tâche `fetch_taux_change_task` 18h15, fallback ~0,92). Dashboard « Performance » **segmenté PEA / CTO** avec sous-totaux EUR.
+- **Sourcing US** : EODHD ne couvre PAS les US (403 sur `fundamentals` + `search`) → US via **FMP** (fondamentaux) + **yfinance** (cours, ticker stocké NU : `AAPL`). `yfinance_client._ticker_yahoo` convertit les suffixes EODHD→Yahoo (.US→nu, .XETRA→.DE, .LSE→.L). ⚠️ ISIN seul non résolu (search 403) → toujours saisir le **ticker**.
+
+### 13.2 Pont TradingAgents (analyse multi-agents)
+Intégration de TradingAgents (TauricResearch) comme **labo d'analyse approfondie**, séparé mais piloté depuis la fiche.
+- Installé sur VPS `/var/www/tradingagents` (venv Python 3.12 dédié, www-data, **provider Mistral**). Outil expérimental, **aucune connexion broker** (analyse/simulation only).
+- **Pont en sous-processus** (deps incompatibles Django) : bouton « 🔬 Analyse approfondie » → tâche Celery `analyse_tradingagents_task` (async 2-5 min, ~centimes) → `scripts/gestpea_ta_bridge.py` (exécuté par le venv TA, sortie JSON sentinellée `===GESTPEA_TA_JSON===`) → **synthèse FR par Mistral** → champs `Titre.ta_note/ta_rapport/ta_statut/ta_date_analyse`. **Migration `0003`**.
+- Endpoint `POST /api/titres/{ticker}/tradingagents/`. Réglages `TRADINGAGENTS_*` dans settings (HOME/cwd = `/var/www/tradingagents` pour www-data). Clé `FRED_API_KEY` requise pour l'analyste macro (sinon l'analyste news est écarté).
+- **Pertinence** : excellent pour US + grandes caps ; faible pour small caps FR (sentiment/news/macro US-centriques, benchmark SPY). Pour les small caps FR → l'analyse native GestPEA reste plus adaptée.
+
+### 13.3 Fiabilisation du pipeline news (scoring Mistral)
+Un backlog de ~430 articles non scorés figeait les « Actualités récentes ». 4 bugs cumulés corrigés dans `scoring_llm.py` :
+1. `json.loads` strict rejetait tout le lot sur un caractère parasite → **parseur tolérant `_parse_resultats`** (scanner objet-par-objet : objets sans crochets, virgules/retours-ligne, troncature, NDJSON).
+2. Rate-limit Mistral (429) → **`_mistral_complete`** (retry/back-off 2/5/10/20s) + throttle 1s/lot + **plafond 150 articles/run**.
+3. Éléments non-dict dans la réponse → filtrés.
+> Le pipeline est désormais **auto-réparant** : un lot n'est plus jamais perdu sur un aléa de format Mistral.
+
+### 13.4 Documents dans le score de conviction
+Les documents uploadés (essais cliniques, résultats — signaux **absents de la presse**) entrent dans le score.
+- `evaluer_impact_documents()` : Mistral note l'impact global des PDF (-1 à +1), cache `Titre.score_documents` (recalcul uniquement si un doc change). **Migration `0004`**.
+- Pondération **centralisée** `POIDS_CONVICTION` (`conviction.py`, somme 100, facile à ajuster) : technique 15 / fondamentaux 30 / sentiment 20 / **documents 20** / historique 15.
+- Document **neutre** (`|impact| < SEUIL_DOC_NEUTRE` = 0,10) **exclu** du calcul (pas de dilution vers 50 %). L'analyse documentaire est injectée dans l'explication du score.
+
+### Décisions clés Phase 3
+- **Deux enveloppes** : un titre porte `compte` (pea/cto) + `devise`. Ne jamais appliquer les contraintes PEA (éligibilité, plafond) à un titre CTO.
+- **Migrations suivies dans git** (`app/migrations/`, `0001`→`0004`) : générer le `makemigrations` AVANT de committer, ne pas compter sur le VPS.
+- **Branche prod = `main`** (alignée `claude/multinational-cto`). NE PAS utiliser `claude/integrate-apis-server-kScvu` (périmée).
+- **TradingAgents ≠ GestPEA** : venvs séparés, communication par sous-processus, jamais d'`import tradingagents` côté Django.
+
+---
+
+## 14. Phase 4 — Réparation file Celery + TradingAgents opérationnel (18 août 2026)
+
+Deux pannes distinctes empêchaient l'analyse approfondie (« file de tâches indisponible ») ET figeaient les cours depuis le 8 juillet.
+
+### 14.1 File Celery en panne — port Redis incorrect
+- **Symptôme** : bouton « Lancer l'analyse » → « Impossible de lancer l'analyse (file de tâches indisponible) » ; cours figés au 08/07/2026 ; worker Celery RUNNING mais 0 tâche consommée.
+- **Cause racine** : `REDIS_URL` dans `/var/www/pea/.env` pointait sur `redis://127.0.0.1:6380/0`, mais **aucun Redis n'écoute sur 6380** — l'instance systemd tourne sur **6379** (`redis-server.service`, port 6379 dans `/etc/redis/redis.conf`). L'enqueue `task.delay()` levait une `RuntimeError` (retry-limit Celery) → message 503 côté API.
+- **Correctif (serveur, hors git car .env)** : `REDIS_URL` repointé sur `redis://127.0.0.1:6379/0` + `supervisorctl restart pea_celery_worker pea_celery_beat pea_gunicorn`. Backup : `/var/www/pea/.env.bak-6380fix`.
+- **Effet de bord attendu** : les tâches planifiées (`fetch_cours_eod_task`, etc.) repartent → les cours se rafraîchissent. Les news fraîches continuaient car collectées en synchrone (autre chemin).
+
+### 14.2 429 Mistral systématique — aucune analyse TA n'aboutissait
+- **Cause racine** : le provider `mistral` de TradingAgents est servi par `ChatOpenAI` (endpoint OpenAI-compatible `https://api.mistral.ai/v1`) **sans retry 429** suffisant (défaut SDK ≈2). Une rafale multi-agents saturait le tier Mistral → `RateLimitError 429` → run KO. Aucune analyse n'était jamais passée en `ta_statut="ok"`.
+- **Correctif (patch dans le venv serveur, HORS git)** : `site-packages/tradingagents/graph/trading_graph.py` → `_get_provider_kwargs()` ajoute `max_retries=8` pour `provider == "mistral"` (backoff exponentiel natif de `ChatOpenAI`, qui forward `max_retries` via `_PASSTHROUGH_KWARGS`).
+- ⚠️ **Ce patch est écrasé à toute réinstall/mise à jour de TradingAgents** (`pip install -U tradingagents`). Le réappliquer après chaque upgrade. Vérifié : run APLD ~3,5 min, `ta_statut="termine"`, note Sell, rapport FR complet.
+
+### Décision clé Phase 4
+- **Port Redis canonique = 6379** (instance systemd). Ne plus jamais pointer la config sur 6380.
+- **Le correctif `max_retries` vit sur le serveur** : cette section sert de mémo. En cas de réinstall TradingAgents, rouvrir `trading_graph.py` et réinsérer le bloc `if provider == "mistral": kwargs.setdefault("max_retries", 8)` avant le bloc temperature.
 
 ---
 

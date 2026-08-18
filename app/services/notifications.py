@@ -102,11 +102,12 @@ def _envoyer_email(alerte) -> bool:
         return False
 
     titre  = alerte.titre
+    sym    = titre.symbole_devise
     niveau = alerte.niveau.upper()
     emoji_niveau = {'FORTE': '🔴', 'MODEREE': '🟡', 'SURVEILLANCE': '⚪'}.get(niveau, '⚪')
 
     sujet = (
-        f"{emoji_niveau} PEA — {titre.nom_court or titre.ticker} · "
+        f"{emoji_niveau} {titre.get_compte_display()} — {titre.nom_court or titre.ticker} · "
         f"Score {alerte.score_confluence}/10 · {alerte.date_signal}"
     )
 
@@ -115,7 +116,7 @@ def _envoyer_email(alerte) -> bool:
 {alerte.texte_ia}
 
 ---
-Cours au signal : {alerte.cours_au_signal} €
+Cours au signal : {alerte.cours_au_signal} {sym}
 RSI : {alerte.rsi_au_signal or 'N/D'}
 Sentiment : {alerte.sentiment_au_signal or 'N/D'}
 Date : {alerte.date_signal}
@@ -181,6 +182,7 @@ def _envoyer_email_digest(texte: str, destinataire: str) -> bool:
 def _template_email_alerte(alerte) -> str:
     """Génère le HTML de l'email d'alerte."""
     titre   = alerte.titre
+    sym     = titre.symbole_devise
     niveau  = alerte.niveau
     couleur = {'forte': '#E24B4A', 'moderee': '#BA7517', 'surveillance': '#888780'}.get(niveau, '#888780')
     bg      = {'forte': '#fcebeb', 'moderee': '#faeeda', 'surveillance': '#f1efe8'}.get(niveau, '#f1efe8')
@@ -201,7 +203,7 @@ def _template_email_alerte(alerte) -> str:
     </div>
     <div style="font-size: 20px; font-weight: 500;">{titre.nom_court or titre.nom} ({titre.ticker})</div>
     <div style="font-size: 13px; color: #5f5e5a; margin-top: 4px;">
-      Cours au signal : <strong>{alerte.cours_au_signal} €</strong>
+      Cours au signal : <strong>{alerte.cours_au_signal} {sym}</strong>
       {f'· RSI : {alerte.rsi_au_signal}' if alerte.rsi_au_signal else ''}
       · {alerte.date_signal}
     </div>
@@ -273,6 +275,7 @@ def _envoyer_telegram_texte(texte: str) -> bool:
 def _formater_telegram_alerte(alerte) -> str:
     """Formate une alerte pour Telegram (HTML Telegram)."""
     titre   = alerte.titre
+    sym     = titre.symbole_devise
     niveau  = alerte.niveau
     emoji   = {'forte': '🔴', 'moderee': '🟡', 'surveillance': '⚪'}.get(niveau, '⚪')
 
@@ -297,7 +300,7 @@ def _formater_telegram_alerte(alerte) -> str:
     return f"""{emoji} <b>{titre.nom_court or titre.nom}</b> ({titre.ticker})
 <b>Score confluence : {alerte.score_confluence}/10</b> · {alerte.date_signal}
 
-<b>Cours :</b> {alerte.cours_au_signal} €{f'  |  RSI : {alerte.rsi_au_signal}' if alerte.rsi_au_signal else ''}{f'  |  Sentiment : {alerte.sentiment_au_signal:+.2f}' if alerte.sentiment_au_signal else ''}
+<b>Cours :</b> {alerte.cours_au_signal} {sym}{f'  |  RSI : {alerte.rsi_au_signal}' if alerte.rsi_au_signal else ''}{f'  |  Sentiment : {alerte.sentiment_au_signal:+.2f}' if alerte.sentiment_au_signal else ''}
 
 <b>Signaux :</b>
 {lignes_signaux}

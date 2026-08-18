@@ -458,6 +458,12 @@ class EODHDClient:
             if general.get(champ_api) and not getattr(titre_obj, champ_model):
                 champs[champ_model] = general[champ_api]
 
+        # Devise : toujours alignée sur EODHD (le défaut 'EUR' est truthy, donc
+        # le test « champ vide » ci-dessus ne suffit pas — on force la cotation réelle).
+        devise_api = (general.get("CurrencyCode") or "").upper()
+        if devise_api and devise_api != (titre_obj.devise or "").upper():
+            champs["devise"] = devise_api
+
         if champs:
             Titre.objects.filter(pk=titre_obj.pk).update(**champs)
 
@@ -564,9 +570,13 @@ class EODHDClient:
         try:
             raw     = self.get_fondamentaux(ticker)
             general = raw.get("General", {}) or {}
-            pays    = general.get("CountryISO", "").upper()
+            # EODHD renvoie le pays en ISO-2 (FR, DE, US…) alors que PAYS_ELIGIBLES_PEA
+            # est en ISO-3 (FRA, DEU…) → normaliser avant comparaison, sinon tout ressort non-éligible.
+            from app.services.auto_fill import _normaliser_pays
+            pays_brut = (general.get("CountryISO") or general.get("Country") or "").upper()
+            pays    = _normaliser_pays(pays_brut)
             eligible = pays in PAYS_ELIGIBLES_PEA
-            logger.info("Éligibilité PEA %s : pays=%s → %s", ticker, pays, eligible)
+            logger.info("Éligibilité PEA %s : pays=%s (brut=%s) → %s", ticker, pays, pays_brut, eligible)
             return eligible
         except (EODHDNotFoundError, EODHDError) as e:
             logger.error("Éligibilité %s : %s", ticker, e)

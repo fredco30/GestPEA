@@ -5,9 +5,9 @@
  * Affiche : métriques clés, graphique technique, sentiment, news, alertes.
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTitre } from '../hooks/useTitre'
-import { actualiserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument } from '../api/client'
+import { actualiserTitre, updateTitre, getDocuments, uploadDocument, deleteDocument, getTitreDetail, analyserTradingAgents } from '../api/client'
 import GraphiqueTechnique from './GraphiqueTechnique'
 import { BadgeSentiment, CarteSignaux, FeedArticles, CarteAlertes } from './utilitaires'
 
@@ -92,6 +92,9 @@ export default function FicheTitre({ ticker }) {
         </div>
       )}
 
+      {/* ---- Analyse approfondie TradingAgents ---- */}
+      <AnalyseApprofondie key={ticker} titre={titre} ticker={ticker} />
+
       {/* ---- Graphique technique ---- */}
       {ohlc && (
         <GraphiqueTechnique
@@ -115,6 +118,9 @@ export default function FicheTitre({ ticker }) {
         <FeedArticles articles={titre.articles_recents} />
       </div>
 
+      {/* ---- Analyse documentaire (impact des PDF sur le score) ---- */}
+      <AnalyseDocuments titre={titre} />
+
       {/* ---- Alertes récentes ---- */}
       {titre.alertes_recentes?.length > 0 && (
         <CarteAlertes alertes={titre.alertes_recentes} ticker={ticker} />
@@ -128,8 +134,199 @@ export default function FicheTitre({ ticker }) {
 }
 
 // ---------------------------------------------------------------------------
+// Analyse documentaire : impact des documents uploadés (composante du score)
+// ---------------------------------------------------------------------------
+function AnalyseDocuments({ titre }) {
+  const analyse = titre.analyse_documents_ia
+  const score   = titre.score_documents
+  if (!analyse && (score === null || score === undefined)) return null
+
+  const s = (score !== null && score !== undefined) ? Number(score) : null
+  const neutre = s !== null && Math.abs(s) < 0.10
+  const couleur = s === null || neutre ? 'warning' : s >= 0.10 ? 'success' : 'danger'
+  const libelle = s === null ? '—'
+    : s >= 0.40 ? 'Très favorable'
+    : s >= 0.10 ? 'Favorable'
+    : s <= -0.40 ? 'Défavorable'
+    : s <= -0.10 ? 'Plutôt défavorable'
+    : 'Neutre'
+
+  // Position du curseur sur l'échelle -1 → +1 (0 % à 100 %)
+  const pct = s === null ? 50 : Math.max(0, Math.min(100, (s + 1) / 2 * 100))
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)', padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          📄 Analyse documentaire
+          <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> · tes documents déposés</span>
+        </span>
+        <div style={{ flex: 1 }} />
+        {s !== null && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 12,
+            background: `var(--color-background-${couleur})`, color: `var(--color-text-${couleur})`,
+          }}>
+            {libelle} ({s >= 0 ? '+' : ''}{s.toFixed(2)})
+          </span>
+        )}
+      </div>
+
+      {/* Échelle visuelle -1 → +1 */}
+      {s !== null && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ position: 'relative', height: 6, borderRadius: 4,
+            background: 'linear-gradient(90deg, var(--color-text-danger), var(--color-background-secondary) 50%, var(--color-text-success))' }}>
+            <div style={{
+              position: 'absolute', left: `${pct}%`, top: -3, transform: 'translateX(-50%)',
+              width: 12, height: 12, borderRadius: '50%',
+              background: 'var(--color-background-primary)',
+              border: `2px solid var(--color-text-${couleur})`,
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 3 }}>
+            <span>négatif</span><span>neutre</span><span>positif</span>
+          </div>
+        </div>
+      )}
+
+      {analyse && (
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+          {analyse}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8 }}>
+        {neutre
+          ? 'Impact jugé neutre → n’influence pas le score de conviction.'
+          : 'Compte pour 20 % du score de conviction.'}
+        {titre.date_score_documents && ` · évalué le ${new Date(titre.date_score_documents).toLocaleDateString('fr-FR')}`}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // En-tête compact — 2 lignes
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Analyse approfondie TradingAgents (multi-agents externe, asynchrone)
+// ---------------------------------------------------------------------------
+function AnalyseApprofondie({ titre, ticker }) {
+  const [statut, setStatut]           = useState(titre.ta_statut || '')
+  const [note, setNote]               = useState(titre.ta_note || '')
+  const [rapport, setRapport]         = useState(titre.ta_rapport || '')
+  const [dateAnalyse, setDateAnalyse] = useState(titre.ta_date_analyse || null)
+  const [erreur, setErreur]           = useState(null)
+  const pollRef = useRef(null)
+
+  const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
+
+  const rafraichir = useCallback(async () => {
+    try {
+      const t = await getTitreDetail(ticker)
+      setStatut(t.ta_statut || '')
+      setNote(t.ta_note || '')
+      setRapport(t.ta_rapport || '')
+      setDateAnalyse(t.ta_date_analyse || null)
+      if (t.ta_statut !== 'en_cours') stopPoll()
+    } catch (e) { /* on réessaiera au prochain tick */ }
+  }, [ticker])
+
+  // Démarre/arrête le polling selon le statut (gère aussi l'ouverture sur une analyse déjà lancée)
+  useEffect(() => {
+    if (statut === 'en_cours' && !pollRef.current) pollRef.current = setInterval(rafraichir, 25000)
+    return stopPoll
+  }, [statut, rafraichir])
+
+  const lancer = async () => {
+    setErreur(null)
+    try {
+      await analyserTradingAgents(ticker)
+      setStatut('en_cours')
+      setDateAnalyse(new Date().toISOString())   // date fraîche → non périmé
+    } catch (e) {
+      setErreur(e.message || 'Erreur au lancement')
+    }
+  }
+
+  // Une analyse "en_cours" depuis plus de 15 min est jugée périmée (worker/broker
+  // indisponible) → on réautorise la relance plutôt que de geler le bouton.
+  const enCoursBrut = statut === 'en_cours'
+  const dateMs = dateAnalyse ? new Date(dateAnalyse).getTime() : 0
+  const perime = enCoursBrut && dateMs > 0 && (Date.now() - dateMs > 15 * 60 * 1000)
+  const enCours = enCoursBrut && !perime
+  const noteU = (note || '').toLowerCase()
+  const couleurNote = /buy|overweight/.test(noteU) ? 'success'
+    : /sell|underweight/.test(noteU) ? 'danger'
+    : 'warning'
+
+  return (
+    <div style={{
+      background: 'var(--color-background-primary)',
+      border: '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)', padding: '14px 16px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    marginBottom: (rapport || enCours || erreur || !note) ? 10 : 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)' }}>
+          🔬 Analyse approfondie
+          <span style={{ fontWeight: 400, color: 'var(--color-text-tertiary)' }}> · TradingAgents (multi-agents)</span>
+        </span>
+        {note && !enCours && (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 12,
+            background: `var(--color-background-${couleurNote})`, color: `var(--color-text-${couleurNote})`,
+          }}>{note}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button onClick={lancer} disabled={enCours} title="Analyse multi-agents approfondie (≈ quelques centimes, 2-5 min)"
+          style={{
+            padding: '5px 12px', fontSize: 12, fontWeight: 500,
+            background: enCours ? 'var(--color-background-secondary)' : 'var(--color-text-primary)',
+            color: enCours ? 'var(--color-text-tertiary)' : 'var(--color-background-primary)',
+            border: 'none', borderRadius: 'var(--border-radius-md)', cursor: enCours ? 'wait' : 'pointer',
+          }}>
+          {enCours ? '⏳ Analyse en cours…' : (note ? '↻ Relancer' : '✦ Lancer l\'analyse')}
+        </button>
+      </div>
+
+      {enCours && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+          Les agents (technique, sentiment, fondamentaux, débat haussier/baissier, équipe risque) travaillent…
+          Cela prend 2 à 5 minutes — le rapport apparaîtra ici automatiquement. Tu peux continuer à naviguer en attendant.
+        </div>
+      )}
+
+      {erreur && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-danger)' }}>Erreur : {erreur}</div>
+      )}
+
+      {rapport && !enCours && (
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+          {rapport}
+          {dateAnalyse && (
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 8 }}>
+              Analyse du {new Date(dateAnalyse).toLocaleString('fr-FR')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!note && !enCours && !erreur && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+          Lance une analyse multi-agents approfondie : note Buy/Hold/Sell + synthèse en français
+          (technique, sentiment, fondamentaux, débat haussier/baissier, risque).
+        </div>
+      )}
+    </div>
+  )
+}
 
 function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours, onActualiser, onRefresh, onDocUploaded }) {
   const [editPos, setEditPos]             = useState(false)
@@ -148,6 +345,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
 
   useEffect(() => { chargerDocs() }, [chargerDocs])
 
+  const sym          = titre.symbole_devise || '€'
   const nb           = Number(titre.nb_actions) || 0
   const prm          = Number(titre.prix_revient_moyen) || 0
   const coursActuel  = dernier ? Number(dernier.cloture) : null
@@ -215,7 +413,7 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span className="cours-principal" style={{ fontSize: 28, fontWeight: 600, color: 'var(--color-text-primary)' }}>
             {dernier
-              ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`
+              ? `${Number(dernier.cloture).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} ${sym}`
               : '—'}
           </span>
           {(() => {
@@ -349,15 +547,15 @@ function EnTeteCompact({ titre, ticker, dernier, sentimentGlobal, analyseEnCours
           <>
             <div style={{ width: 1, height: 18, background: 'var(--color-border-tertiary)', flexShrink: 0 }} />
             <PillMetrique label="Actions" valeur={nb.toLocaleString('fr-FR')} />
-            <PillMetrique label="PRU" valeur={prm ? `${prm.toFixed(2)} €` : '—'} />
+            <PillMetrique label="PRU" valeur={prm ? `${prm.toFixed(2)} ${sym}` : '—'} />
             <PillMetrique
               label="Valeur"
-              valeur={valeurPos ? `${valeurPos.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €` : '—'}
+              valeur={valeurPos ? `${valeurPos.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym}` : '—'}
             />
             {pmv != null && (
               <PillMetrique
                 label="PV/MV"
-                valeur={`${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)`}
+                valeur={`${pmv >= 0 ? '+' : ''}${pmv.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} ${sym} (${pmvPct >= 0 ? '+' : ''}${pmvPct.toFixed(1)}%)`}
                 couleur={pmv >= 0 ? 'var(--color-text-success)' : 'var(--color-text-danger)'}
               />
             )}

@@ -154,7 +154,7 @@ def _evaluer_renforcement(titre, aujourd_hui):
     if drawdown_principal is None:
         return None
 
-    # Niveaux de prix en euros
+    # Niveaux de prix (devise native du titre)
     mm50 = bougie.mm_50
     mm200 = bougie.mm_200
     boll_inf = bougie.boll_inf
@@ -178,10 +178,11 @@ def _evaluer_renforcement(titre, aujourd_hui):
 
 def _creer_signal_renforcement(titre, aujourd_hui, ctx):
     """Crée un Signal de type renforcement avec description détaillée."""
+    sym = titre.symbole_devise
     source = "prix d'achat (PRU)" if ctx['source_drawdown'] == 'pru' else 'plus haut récent (60j)'
     description = (
         f"Baisse de {ctx['drawdown_pct']}% depuis le {source}. "
-        f"Cours {ctx['cours_actuel']:.2f} €, PRU {ctx['pru']:.2f} €, "
+        f"Cours {ctx['cours_actuel']:.2f} {sym}, PRU {ctx['pru']:.2f} {sym}, "
         f"RSI {ctx['rsi']:.1f}, qualité {ctx['score_qualite']:.0f}/10."
     )
 

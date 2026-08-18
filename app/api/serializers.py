@@ -147,12 +147,13 @@ class TitreListSerializer(serializers.ModelSerializer):
     sentiment_global  = serializers.SerializerMethodField()
     valeur_position   = serializers.ReadOnlyField()
     plus_moins_value  = serializers.ReadOnlyField()
+    symbole_devise    = serializers.ReadOnlyField()
 
     class Meta:
         model  = Titre
         fields = [
             'id', 'ticker', 'nom', 'nom_court', 'place', 'pays',
-            'secteur', 'statut', 'eligible_pea',
+            'secteur', 'statut', 'eligible_pea', 'devise', 'symbole_devise', 'compte',
             'nb_actions', 'prix_revient_moyen',
             'dernier_cours', 'variation_jour',
             'sentiment_global', 'valeur_position', 'plus_moins_value',
@@ -208,12 +209,14 @@ class TitreDetailSerializer(serializers.ModelSerializer):
     patterns_actifs  = serializers.SerializerMethodField()
     valeur_position  = serializers.ReadOnlyField()
     plus_moins_value = serializers.ReadOnlyField()
+    symbole_devise   = serializers.ReadOnlyField()
 
     class Meta:
         model  = Titre
         fields = [
             'id', 'ticker', 'isin', 'nom', 'nom_court', 'place', 'pays',
             'secteur', 'sous_secteur', 'statut', 'eligible_pea', 'lot',
+            'devise', 'symbole_devise', 'compte',
             'nb_actions', 'prix_revient_moyen', 'date_premier_achat',
             'valeur_position', 'plus_moins_value',
             'prix_historique', 'fondamentaux',
@@ -222,6 +225,8 @@ class TitreDetailSerializer(serializers.ModelSerializer):
             'patterns_actifs',
             'notes',
             'score_conviction', 'explication_conviction', 'date_calcul_conviction',
+            'ta_note', 'ta_rapport', 'ta_statut', 'ta_date_analyse',
+            'score_documents', 'analyse_documents_ia', 'date_score_documents',
         ]
 
     def get_prix_historique(self, obj):
@@ -283,11 +288,14 @@ class TitreCreateSerializer(serializers.ModelSerializer):
         fields = [
             'ticker', 'nom', 'nom_court', 'place', 'pays',
             'secteur', 'statut', 'nb_actions', 'prix_revient_moyen',
-            'date_premier_achat', 'notes',
+            'date_premier_achat', 'notes', 'devise', 'compte',
         ]
         extra_kwargs = {
-            'nom':  {'required': False, 'default': ''},
-            'pays': {'required': False, 'default': ''},
+            'nom':    {'required': False, 'default': ''},
+            'pays':   {'required': False, 'default': ''},
+            # devise/compte : optionnels — auto-remplis par auto_fill si non fournis
+            'devise': {'required': False},
+            'compte': {'required': False},
         }
 
     def validate_ticker(self, value):
@@ -439,6 +447,15 @@ class DashboardSerializer(serializers.Serializer):
     variation_jour_portefeuille = serializers.DecimalField(
         max_digits=8, decimal_places=2, allow_null=True
     )
+    # Sous-totaux par enveloppe (en EUR) — segmentation PEA / Compte-Titres
+    valeur_pea_eur = serializers.DecimalField(
+        max_digits=12, decimal_places=2, allow_null=True, required=False
+    )
+    valeur_cto_eur = serializers.DecimalField(
+        max_digits=12, decimal_places=2, allow_null=True, required=False
+    )
+    nb_titres_pea = serializers.IntegerField(required=False)
+    nb_titres_cto = serializers.IntegerField(required=False)
     nb_titres_portefeuille = serializers.IntegerField()
     nb_titres_surveillance = serializers.IntegerField()
 

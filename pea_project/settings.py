@@ -141,6 +141,13 @@ from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
 
+    # --- Taux de change vers EUR : chaque soir lun-ven à 18h15 (avant l'agrégation) ---
+    # Convertit le portefeuille multi-devises (PEA EUR + CTO USD…) ; ~1 req EODHD/devise.
+    'fetch-taux-change': {
+        'task':     'app.tasks.fetch_taux_change_task',
+        'schedule': crontab(hour=18, minute=15, day_of_week='1-5'),
+    },
+
     # --- Cours EOD : chaque soir lun-ven à 18h30 (après clôture Euronext 17h35) ---
     'fetch-cours-eod': {
         'task':     'app.tasks.fetch_cours_eod_task',
@@ -316,5 +323,17 @@ STATIC_URL   = '/static/'
 STATIC_ROOT  = BASE_DIR / 'staticfiles'
 MEDIA_URL    = '/media/'
 MEDIA_ROOT   = BASE_DIR / 'media'
+
+# ---------------------------------------------------------------------------
+# PONT TRADINGAGENTS (outil multi-agents externe, venv séparé)
+# ---------------------------------------------------------------------------
+# TradingAgents tourne dans son propre environnement (deps incompatibles Django) :
+# on l'invoque en sous-processus. Voir app/services/tradingagents_bridge.py.
+TRADINGAGENTS_PYTHON  = env('TRADINGAGENTS_PYTHON',  default='/var/www/tradingagents/venv/bin/python')
+TRADINGAGENTS_SCRIPT  = env('TRADINGAGENTS_SCRIPT',  default=str(BASE_DIR / 'scripts' / 'gestpea_ta_bridge.py'))
+TRADINGAGENTS_ENV     = env('TRADINGAGENTS_ENV',     default='/var/www/tradingagents/.env')
+# HOME/cwd du sous-processus : doit appartenir à www-data (TradingAgents écrit dans ~/.tradingagents)
+TRADINGAGENTS_HOME    = env('TRADINGAGENTS_HOME',    default='/var/www/tradingagents')
+TRADINGAGENTS_TIMEOUT = env.int('TRADINGAGENTS_TIMEOUT', default=600)
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

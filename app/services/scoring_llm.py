@@ -23,6 +23,7 @@ Dépendances :
 
 import json
 import logging
+import time
 from datetime import date, timedelta
 from typing import Optional
 
@@ -77,6 +78,76 @@ def _get_client():
     import httpx
     http_client = httpx.Client(http2=False, timeout=30.0)
     return Mistral(api_key=api_key, client=http_client)
+
+
+def _parse_resultats(texte: str) -> list:
+    """
+    Parseur JSON TOLÉRANT pour les réponses LLM.
+    Gère les cas où Mistral renvoie : un tableau propre, des objets séparés
+    (NDJSON), du texte/markdown parasite, ou des données en trop après le JSON
+    (« Extra data ») — au lieu de tout rejeter comme json.loads strict.
+    Retourne une liste d'objets (dicts).
+    """
+    if not texte:
+        return []
+    texte = texte.strip()
+
+    # Retirer d'éventuelles clôtures markdown ```json ... ```
+    if "```" in texte:
+        parts = texte.split("```")
+        if len(parts) >= 2:
+            texte = parts[1]
+            if texte.lstrip().lower().startswith("json"):
+                texte = texte.lstrip()[4:]
+            texte = texte.strip()
+
+    # Décoder chaque valeur JSON successive et ne garder que les OBJETS {id,score,tags}.
+    # Gère TOUS les formats observés : tableau [ ... ], objets séparés par virgules ou
+    # retours-ligne SANS crochets, tags imbriqués (consommés avec leur objet parent,
+    # donc jamais pris pour le tableau racine), et réponse tronquée (queue ignorée).
+    resultats = []
+    decoder = json.JSONDecoder()
+    i, n = 0, len(texte)
+    while i < n:
+        if texte[i] not in "[{":
+            i += 1
+            continue
+        try:
+            obj, end = decoder.raw_decode(texte, i)
+        except json.JSONDecodeError:
+            i += 1
+            continue
+        if isinstance(obj, list):
+            resultats.extend(o for o in obj if isinstance(o, dict))
+        elif isinstance(obj, dict):
+            resultats.append(obj)
+        i = max(end, i + 1)
+    return resultats
+
+
+def _mistral_complete(client, **kwargs):
+    """
+    Appel Mistral avec retry/back-off sur rate-limit (HTTP 429).
+    Mistral plafonne le débit : sur de gros volumes (scoring en lot), on se fait
+    jeter en 429. On réessaie avec des délais croissants plutôt que de perdre le lot.
+    Les erreurs non-429 sont relevées immédiatement.
+    """
+    delais = [2, 5, 10, 20]
+    derniere = None
+    for i in range(len(delais) + 1):
+        try:
+            return client.chat.complete(**kwargs)
+        except Exception as e:
+            derniere = e
+            msg = str(e).lower()
+            est_429 = ("429" in msg) or ("rate limit" in msg) or ("rate_limited" in msg) or ("too many" in msg)
+            if est_429 and i < len(delais):
+                logger.warning("[LLM] Rate-limit Mistral — attente %ss (tentative %d/%d)",
+                               delais[i], i + 1, len(delais))
+                time.sleep(delais[i])
+                continue
+            raise
+    raise derniere
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +237,8 @@ Exemple : [0, 2, 4]
 Si aucun article n'est pertinent : []"""
 
     try:
-        response = client.chat.complete(
+        response = _mistral_complete(
+            client,
             model=MODEL_SCORING,
             max_tokens=200,
             messages=[
@@ -268,10 +340,11 @@ def scorer_articles(article_ids: list[int]) -> int:
     articles_list = articles_pertinents
     nb_ok = 0
 
-    # Traitement par batch
+    # Traitement par batch (throttle léger pour ménager le rate-limit Mistral)
     for i in range(0, len(articles_list), BATCH_SIZE):
         batch = articles_list[i:i + BATCH_SIZE]
         nb_ok += _scorer_batch(client, batch)
+        time.sleep(1.0)
 
     # Après scoring, recalculer les scores agrégés par titre et par jour
     tickers_touches = list({a.titre.ticker for a in articles_list})
@@ -325,7 +398,8 @@ Règles de scoring :
 - Réponds UNIQUEMENT avec le JSON, sans texte avant ou après"""
 
     try:
-        response = client.chat.complete(
+        response = _mistral_complete(
+            client,
             model=MODEL_SCORING,
             max_tokens=MAX_TOKENS,
             messages=[
@@ -339,19 +413,19 @@ Règles de scoring :
 
         contenu = response.choices[0].message.content.strip()
 
-        # Nettoyer si le modèle a quand même ajouté des backticks
-        if contenu.startswith("```"):
-            contenu = contenu.split("```")[1]
-            if contenu.startswith("json"):
-                contenu = contenu[4:]
-        contenu = contenu.strip()
-
-        resultats = json.loads(contenu)
+        # Parseur tolérant : gère "Extra data", NDJSON, markdown parasite
+        # (sinon un seul caractère en trop faisait échouer tout le lot).
+        resultats = _parse_resultats(contenu)
+        if not resultats:
+            logger.error("[LLM] _scorer_batch : aucune donnée JSON exploitable — %r", contenu[:120])
+            return 0
 
         nb_ok = 0
         now = timezone.now()
 
         for res in resultats:
+            if not isinstance(res, dict):
+                continue  # Mistral renvoie parfois une chaîne dans le tableau
             idx   = res.get("id")
             score = res.get("score")
             tags  = res.get("tags", [])
@@ -887,9 +961,9 @@ def generer_texte_alerte(alerte_id: int) -> bool:
     alerte.nb_occurrences_passees  = nb_occurrences
     alerte.save(update_fields=['fiabilite_historique', 'nb_occurrences_passees'])
 
-    # Contexte profil investisseur
+    # Contexte profil investisseur — enveloppe réelle du titre (PEA européen vs CTO US)
     profil_ctx = {
-        "enveloppe":           "PEA",
+        "enveloppe":           titre.get_compte_display(),
         "horizon":             f"{profil.horizon_min_ans}–{profil.horizon_max_ans} ans" if profil else "7-15 ans",
         "style":               profil.style if profil else "croissance",
         "mode_accumulation":   profil.mode_accumulation if profil else True,
@@ -911,6 +985,9 @@ def generer_texte_alerte(alerte_id: int) -> bool:
             "objectif_analystes": str(fond.objectif_cours_moyen) if fond and fond.objectif_cours_moyen else "N/D",
         }
 
+    # Devise de cotation du titre (€ pour PEA, $ pour un titre US d'un CTO…)
+    sym = titre.symbole_devise
+
     # --- Contexte renforcement (étape 32) ---
     renforcement_ctx = ""
     is_renforcement = any(s.get('type_signal') == 'renforcement' for s in signaux)
@@ -919,8 +996,8 @@ def generer_texte_alerte(alerte_id: int) -> bool:
         pv_mv = titre.plus_moins_value
         renforcement_ctx = f"""
 CONTEXTE RENFORCEMENT (titre en portefeuille) :
-- Position actuelle : {titre.nb_actions} actions, PRU {pru} €
-- Plus/moins-value latente : {pv_mv} €
+- Position actuelle : {titre.nb_actions} actions, PRU {pru} {sym}
+- Plus/moins-value latente : {pv_mv} {sym}
 - Ce titre est DÉJÀ en portefeuille — l'alerte concerne un renforcement potentiel
 """
 
@@ -928,9 +1005,9 @@ CONTEXTE RENFORCEMENT (titre en portefeuille) :
 
     prompt_user = f"""Tu dois rédiger le texte d'une alerte boursière pour un investisseur DÉBUTANT gérant son PEA en mode long terme. Cette personne n'a AUCUNE connaissance technique — elle ne sait pas ce qu'est un RSI, un MACD ou des bandes de Bollinger.
 
-TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur}
+TITRE : {titre.nom} ({titre.ticker}) — {titre.secteur} — devise {titre.devise} ({sym})
 DATE : {alerte.date_signal}
-COURS AU SIGNAL : {alerte.cours_au_signal} €
+COURS AU SIGNAL : {alerte.cours_au_signal} {sym}
 SCORE DE CONFLUENCE : {alerte.score_confluence}/10
 NIVEAU : {alerte.niveau}
 {renforcement_ctx}
@@ -956,11 +1033,11 @@ PROFIL INVESTISSEUR :
 INSTRUCTIONS DE RÉDACTION :
 1. Commence par une ligne de titre : "NOM_TITRE · Type d'opportunité · Score X/10"
 2. Explique la situation en langage SIMPLE (pas de jargon technique : pas de RSI, MACD, Bollinger, MM50)
-3. Indique clairement les NIVEAUX DE PRIX EN EUROS :
-   - "Zone de support autour de XX €" (niveau en dessous duquel le titre pourrait baisser davantage)
-   - "Zone de résistance vers XX €" (niveau au-dessus duquel le titre aurait du mal à monter)
-   - "Zone d'entrée potentielle entre XX € et XX €" si pertinent
-   - "Objectif des analystes : XX €" si disponible
+3. Indique clairement les NIVEAUX DE PRIX DANS LA DEVISE DU TITRE ({sym}) :
+   - "Zone de support autour de XX {sym}" (niveau en dessous duquel le titre pourrait baisser davantage)
+   - "Zone de résistance vers XX {sym}" (niveau au-dessus duquel le titre aurait du mal à monter)
+   - "Zone d'entrée potentielle entre XX {sym} et XX {sym}" si pertinent
+   - "Objectif des analystes : XX {sym}" si disponible
 4. Rédige 2-3 phrases de contexte en langage naturel accessible
 5. Mentionne la fiabilité historique si > 0 occurrences
 6. Termine TOUJOURS par cette phrase exacte sur une nouvelle ligne :
@@ -969,7 +1046,7 @@ INSTRUCTIONS DE RÉDACTION :
 CONTRAINTES ABSOLUES :
 - Ne jamais utiliser les mots "acheter", "vendre", "investir", "placer"
 - Parler de "renforcement", "point d'entrée potentiel", "opportunité à étudier"
-- TOUJOURS donner des niveaux de prix concrets en euros
+- TOUJOURS donner des niveaux de prix concrets dans la devise du titre ({sym}), jamais convertis
 - Pas de jargon technique — traduire en langage courant
 - Ton professionnel mais accessible, sans exclamation
 - Maximum 250 mots
@@ -1013,7 +1090,7 @@ CONTRAINTES ABSOLUES :
         alerte.texte_ia = (
             f"{titre.nom} ({titre.ticker}) · Score {alerte.score_confluence}/10\n\n"
             f"Confluence de {len(signaux)} signal(s) détectée le {alerte.date_signal}.\n"
-            f"Cours au signal : {alerte.cours_au_signal} €\n\n"
+            f"Cours au signal : {alerte.cours_au_signal} {sym}\n\n"
             f"— Cette observation ne constitue pas un conseil d'investissement."
         )
         alerte.save(update_fields=['texte_ia'])
@@ -1107,9 +1184,10 @@ def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
         logger.info("[LLM] analyse_fondamentale %s : pas de fondamentaux", ticker)
         return None
 
-    # Cours actuel pour contextualiser
+    # Cours actuel pour contextualiser (devise de cotation du titre)
+    sym = titre.symbole_devise
     bougie = PrixJournalier.objects.filter(titre=titre).order_by('-date').first()
-    cours_str = f"{bougie.cloture} €" if bougie else "N/D"
+    cours_str = f"{bougie.cloture} {sym}" if bougie else "N/D"
 
     # Construire le contexte fondamentaux
     fond_data = {
@@ -1128,7 +1206,7 @@ def generer_analyse_fondamentale(ticker: str) -> Optional[str]:
         "Rendement dividende": f"{fond.rendement_dividende}%" if fond.rendement_dividende else "N/D",
         "Payout ratio": f"{fond.payout_ratio}%" if fond.payout_ratio else "N/D",
         "Consensus analystes": fond.consensus or "N/D",
-        "Objectif cours moyen": f"{fond.objectif_cours_moyen} €" if fond.objectif_cours_moyen else "N/D",
+        "Objectif cours moyen": f"{fond.objectif_cours_moyen} {sym}" if fond.objectif_cours_moyen else "N/D",
         "Nb analystes": str(fond.nb_analystes) if fond.nb_analystes else "N/D",
         "Score qualité": f"{fond.score_qualite}/10" if fond.score_qualite else "N/D",
     }
@@ -1156,12 +1234,12 @@ Rédige une analyse qualitative en 4-6 phrases pour un DÉBUTANT en bourse :
 1. **Forces** : ce qui est solide (rentabilité, croissance, dividende, bilan sain)
 2. **Faiblesses** : ce qui est préoccupant (valorisation élevée, dette, marges faibles)
 3. **Positionnement** : comment se situe l'entreprise dans son secteur
-4. Si l'objectif des analystes est disponible, indique le potentiel en € et en %
+4. Si l'objectif des analystes est disponible, indique le potentiel en {sym} et en %
 5. Si des documents ont été ajoutés (rapports, études), intègre les informations clés dans l'analyse
 
 RÈGLES :
 - Langage SIMPLE, pas de jargon (explique PER, ROE etc. en mots simples si tu les mentionnes)
-- Donne des niveaux de prix en € quand pertinent
+- Donne des niveaux de prix dans la devise du titre ({sym}) quand pertinent
 - Pas de conseil d'investissement
 - Termine par : "⚠️ Cette analyse ne constitue pas un conseil d'investissement."
 - Réponds directement, pas de titre ni d'introduction"""
@@ -1174,7 +1252,8 @@ RÈGLES :
                 {"role": "system", "content": (
                     "Tu es un analyste financier qui rédige des analyses fondamentales "
                     "en langage simple pour des débutants. Tu ne donnes jamais de conseils "
-                    "d'investissement. Tu donnes des niveaux de prix en euros."
+                    "d'investissement. Tu donnes les niveaux de prix dans la devise de cotation "
+                    "du titre (€, $, £…), sans jamais les convertir."
                 )},
                 {"role": "user", "content": prompt},
             ],
@@ -1280,3 +1359,81 @@ FORMAT ATTENDU :
     except Exception as e:
         logger.error(f"[LLM] generer_digest_hebdomadaire — erreur : {e}", exc_info=True)
         return f"Digest PEA — semaine du {depuis}\n\nErreur de génération. Consulter le dashboard.\n\n— Ces observations ne constituent pas des conseils d'investissement."
+
+
+# ---------------------------------------------------------------------------
+# IMPACT DES DOCUMENTS UPLOADÉS (composante du score de conviction)
+# ---------------------------------------------------------------------------
+
+def evaluer_impact_documents(ticker: str):
+    """
+    Note l'IMPACT GLOBAL des documents uploadés d'un titre (-1 à +1) via Mistral,
+    et persiste score_documents + analyse_documents_ia sur le Titre.
+
+    Ces documents (rapports annuels, études cliniques, présentations…) ne figurent
+    PAS dans la presse : ils apportent un signal PROPRE, intégré au score de conviction.
+    Retourne le score (float) ou None si pas de document exploitable.
+    """
+    from decimal import Decimal
+    from django.utils import timezone
+    from app.models import Titre, DocumentTitre
+
+    try:
+        titre = Titre.objects.get(ticker=ticker)
+    except Titre.DoesNotExist:
+        return None
+
+    docs = list(DocumentTitre.objects.filter(titre=titre).order_by('-date_upload')[:8])
+    blocs = []
+    for d in docs:
+        contenu = (d.resume_ia or d.texte_extrait or "").strip()
+        if contenu:
+            blocs.append(f"[{d.get_type_doc_display()}] {d.nom}\n{contenu[:1500]}")
+    if not blocs:
+        return None
+
+    prompt = f"""Voici des documents PROPRES à {titre.nom or titre.ticker} ({titre.ticker}), secteur {titre.secteur or 'inconnu'} — rapports, études, présentations — qui ne figurent PAS dans la presse grand public.
+
+{chr(10).join(blocs)}
+
+Évalue leur IMPACT GLOBAL sur les perspectives du titre, du point de vue d'un investisseur long terme.
+Réponds UNIQUEMENT en JSON : {{"score": <nombre de -1.0 (très négatif) à +1.0 (très positif)>, "analyse": "<2-3 phrases en français, langage simple et factuel>"}}
+- 0.0 = neutre / sans impact clair.
+- Base-toi sur le CONTENU (résultats d'études, jalons cliniques, finances, contrats…), pas sur le ton."""
+
+    try:
+        client = _get_client()
+        response = _mistral_complete(
+            client,
+            model=MODEL_ALERTE,
+            max_tokens=400,
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": (
+                    "Tu évalues l'impact de documents d'entreprise sur les perspectives d'une action. "
+                    "Tu réponds uniquement en JSON {score, analyse}. Jamais de conseil d'investissement."
+                )},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        objs = _parse_resultats(response.choices[0].message.content.strip())
+        if not objs:
+            logger.warning("[LLM] evaluer_documents %s : JSON illisible", ticker)
+            return None
+        data = objs[0]
+        try:
+            score = max(-1.0, min(1.0, float(data.get("score"))))
+        except (TypeError, ValueError):
+            logger.warning("[LLM] evaluer_documents %s : score invalide", ticker)
+            return None
+
+        titre.score_documents = Decimal(str(round(score, 3)))
+        titre.analyse_documents_ia = (data.get("analyse") or "").strip()
+        titre.date_score_documents = timezone.now()
+        titre.save(update_fields=['score_documents', 'analyse_documents_ia', 'date_score_documents'])
+        logger.info("[LLM] Impact documents %s : %.2f (%d docs)", ticker, score, len(docs))
+        return score
+
+    except Exception as e:
+        logger.error("[LLM] evaluer_documents %s : %s", ticker, e)
+        return None

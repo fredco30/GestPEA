@@ -91,8 +91,12 @@ SEUILS_DEFAUT = {'score_min': 5.0, 'seuil_drawdown': 12.0}
 # Regex pour détecter un ISIN (2 lettres + 10 alphanumériques)
 ISIN_PATTERN = re.compile(r'^[A-Z]{2}[A-Z0-9]{10}$')
 
-# Exchanges européens prioritaires pour le PEA
+# Exchanges européens prioritaires (univers PEA, préférés par défaut)
 EXCHANGES_PEA_PRIORITE = ['PA', 'AS', 'BR', 'MI', 'MC', 'XETRA', 'LSE']
+
+# Exchanges hors-PEA reconnus (CTO) — pris en compte après l'Europe,
+# sauf si le code saisi correspond exactement à une cotation US (cf. _choisir_meilleur_resultat)
+EXCHANGES_HORS_PEA = ['US', 'NASDAQ', 'NYSE', 'TO', 'AX', 'HK', 'T', 'NS', 'BO', 'SS', 'SZ']
 
 
 def resoudre_ticker(saisie: str) -> str:
@@ -150,9 +154,9 @@ def resoudre_ticker(saisie: str) -> str:
 
         if not resultats:
             logger.warning("Résolution ticker : aucun résultat pour '%s'", query)
-            # Si on a un ISIN + code, tenter PA par défaut
-            if isin_trouve and code_trouve:
-                return f"{code_trouve}.PA"
+            # Repli basé sur le pays de l'ISIN (US → .US, FR → .PA…), jamais forcé sur .PA
+            if code_trouve:
+                return _exchange_fallback(isin_trouve, code_trouve)
             return saisie
 
         # Filtrer par ISIN si fourni
@@ -161,8 +165,8 @@ def resoudre_ticker(saisie: str) -> str:
             if match_isin:
                 resultats = match_isin
 
-        # Privilégier les exchanges européens PEA
-        meilleur = _choisir_meilleur_resultat(resultats)
+        # Privilégier un match exact (titre US d'un CTO), puis l'Europe (PEA)
+        meilleur = _choisir_meilleur_resultat(resultats, code_trouve)
 
         if meilleur:
             ticker = f"{meilleur['Code']}.{meilleur['Exchange']}"
@@ -173,9 +177,9 @@ def resoudre_ticker(saisie: str) -> str:
     except EODHDError as e:
         logger.error("Résolution ticker EODHD : %s", e)
 
-    # Fallback : si on a un code, essayer .PA (Euronext Paris)
+    # Fallback : déduire la place depuis l'ISIN si possible, sans forcer .PA
     if code_trouve:
-        return f"{code_trouve}.PA"
+        return _exchange_fallback(isin_trouve, code_trouve)
 
     return saisie
 
@@ -263,23 +267,51 @@ def _exchange_depuis_isin(isin: str) -> str:
     return prefixe_to_exchange.get(isin[:2], '')
 
 
-def _choisir_meilleur_resultat(resultats: list[dict]) -> dict | None:
+def _choisir_meilleur_resultat(resultats: list[dict], code_voulu: str = None) -> dict | None:
     """
-    Parmi les résultats EODHD search, choisit le meilleur :
-    priorité aux exchanges européens PEA.
+    Parmi les résultats EODHD search, choisit le meilleur.
+
+    Priorités :
+      1. Code correspondant EXACTEMENT à la saisie (ex. 'AAPL' → AAPL.US plutôt qu'un
+         cross-listing européen) — indispensable pour les titres US d'un CTO.
+      2. À défaut, exchanges européens PEA (univers historique de l'app).
+      3. Puis exchanges hors-PEA reconnus (US, Toronto…).
     """
     if not resultats:
         return None
 
-    # Trier : exchanges PEA en premier
-    def score(r):
-        ex = r.get('Exchange', '')
+    code_voulu = (code_voulu or '').upper()
+
+    def rang_exchange(ex):
         if ex in EXCHANGES_PEA_PRIORITE:
             return EXCHANGES_PEA_PRIORITE.index(ex)
+        if ex in EXCHANGES_HORS_PEA:
+            return 50 + EXCHANGES_HORS_PEA.index(ex)
         return 99
 
-    resultats_tries = sorted(resultats, key=score)
-    return resultats_tries[0]
+    def score(r):
+        ex = r.get('Exchange', '')
+        code = (r.get('Code') or '').upper()
+        match_exact = 0 if (code_voulu and code == code_voulu) else 1
+        return (match_exact, rang_exchange(ex))
+
+    return sorted(resultats, key=score)[0]
+
+
+def _exchange_fallback(isin_trouve: str, code_trouve: str) -> str:
+    """
+    Construit un ticker de repli quand la recherche EODHD ne renvoie rien.
+    S'appuie sur le pays de l'ISIN (US → .US, FR → .PA…) plutôt que de forcer
+    aveuglément '.PA' (ce qui cassait les titres US).
+    Retourne le code seul si aucune place ne peut être déduite.
+    """
+    if isin_trouve:
+        if isin_trouve[:2] == 'US':
+            return f"{code_trouve}.US"
+        ex = _exchange_depuis_isin(isin_trouve)
+        if ex:
+            return f"{code_trouve}.{ex}"
+    return code_trouve
 
 
 def auto_remplir_titre(ticker: str) -> dict:
@@ -329,10 +361,15 @@ def auto_remplir_titre(ticker: str) -> dict:
         metadata['eligible_pea'] = _est_eligible_pea(pays)
         metadata['date_verif_eligibilite'] = date.today()
 
+        # Devise de cotation + enveloppe par défaut (PEA si éligible, sinon CTO)
+        metadata['devise'] = (general.get("CurrencyCode") or "").upper() or "EUR"
+        metadata['compte'] = 'pea' if metadata['eligible_pea'] else 'cto'
+
         logger.info(
-            "Auto-fill %s : nom=%s, place=%s, pays=%s, secteur=%s, eligible_pea=%s",
+            "Auto-fill %s : nom=%s, place=%s, pays=%s, devise=%s, secteur=%s, eligible_pea=%s, compte=%s",
             ticker, metadata['nom'][:40], metadata['place'],
-            metadata['pays'], metadata['secteur'], metadata['eligible_pea']
+            metadata['pays'], metadata['devise'], metadata['secteur'],
+            metadata['eligible_pea'], metadata['compte']
         )
 
     except EODHDError as e:
@@ -362,7 +399,9 @@ def auto_remplir_titre(ticker: str) -> dict:
                 metadata['pays'] = pays
                 metadata['eligible_pea'] = _est_eligible_pea(pays)
                 metadata['date_verif_eligibilite'] = date.today()
-                logger.info("Auto-fill FMP %s : nom=%s", ticker, metadata['nom'][:40])
+                metadata['devise'] = (profil.get("currency") or "").upper() or "EUR"
+                metadata['compte'] = 'pea' if metadata['eligible_pea'] else 'cto'
+                logger.info("Auto-fill FMP %s : nom=%s, devise=%s", ticker, metadata['nom'][:40], metadata['devise'])
         except Exception as e:
             logger.error("Auto-fill FMP %s : %s", ticker, e)
 

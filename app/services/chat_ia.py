@@ -48,12 +48,14 @@ RÈGLES ABSOLUES :
 - Tu utilises : "point d'entrée potentiel", "opportunité à étudier", "signal à surveiller".
 - Tu termines TOUJOURS par : "⚠️ Cette observation ne constitue pas un conseil d'investissement."
 - Tu réponds en français, ton professionnel mais ACCESSIBLE pour un débutant.
-- TOUJOURS indiquer des NIVEAUX DE PRIX CONCRETS EN EUROS :
-  • "Zone de support (plancher) autour de XX €" (calculé à partir de MM50, MM200 ou Bollinger bas)
-  • "Zone de résistance (plafond) vers XX €" (calculé à partir de Bollinger haut ou plus hauts récents)
-  • "Zone d'entrée potentielle entre XX € et XX €" quand pertinent
-  • "Objectif des analystes : XX €" si disponible
-- PAS de jargon technique brut (pas "RSI à 35", mais "le titre semble survendu, il se rapproche d'un plancher technique autour de XX €")
+- TOUJOURS indiquer des NIVEAUX DE PRIX CONCRETS, DANS LA DEVISE DE COTATION DU TITRE \
+(€ pour un titre en euros, $ pour un titre en dollars US, £ pour Londres…). Chaque titre du contexte \
+indique sa devise : utilise le bon symbole, ne convertis jamais en euros un cours coté en dollars.
+  • "Zone de support (plancher) autour de XX" dans la devise du titre (calculé à partir de MM50, MM200 ou Bollinger bas)
+  • "Zone de résistance (plafond) vers XX" (calculé à partir de Bollinger haut ou plus hauts récents)
+  • "Zone d'entrée potentielle entre XX et XX" quand pertinent
+  • "Objectif des analystes : XX" si disponible
+- PAS de jargon technique brut (pas "RSI à 35", mais "le titre semble survendu, il se rapproche d'un plancher technique autour de XX")
 - Traduire chaque indicateur en ce que ça signifie concrètement pour le prix
 - Si tu n'as pas assez de données, dis-le honnêtement.
 - Quand l'utilisateur parle d'un titre en particulier, concentre-toi dessus mais utilise
@@ -78,21 +80,23 @@ def _decimal_to_str(val):
 # ---------------------------------------------------------------------------
 
 def _build_titre_detail(titre):
-    """Construit le contexte détaillé d'un titre."""
-    lines = [f"### {titre.nom} ({titre.ticker}) — {titre.secteur or 'Secteur inconnu'} — statut: {titre.statut}"]
+    """Construit le contexte détaillé d'un titre (montants dans sa devise de cotation)."""
+    sym = titre.symbole_devise
+    lines = [f"### {titre.nom} ({titre.ticker}) — {titre.secteur or 'Secteur inconnu'} — "
+             f"devise: {titre.devise} ({sym}) — enveloppe: {titre.get_compte_display()} — statut: {titre.statut}"]
 
     # Position portefeuille
     if titre.nb_actions and titre.nb_actions > 0:
-        lines.append(f"  Position : {titre.nb_actions} actions, PRU {_decimal_to_str(titre.prix_revient_moyen)} €, "
-                     f"valeur {_decimal_to_str(titre.valeur_position)} €, "
-                     f"PV/MV {_decimal_to_str(titre.plus_moins_value)} €")
+        lines.append(f"  Position : {titre.nb_actions} actions, PRU {_decimal_to_str(titre.prix_revient_moyen)} {sym}, "
+                     f"valeur {_decimal_to_str(titre.valeur_position)} {sym}, "
+                     f"PV/MV {_decimal_to_str(titre.plus_moins_value)} {sym}")
 
     # Cours récents (5 derniers jours)
     prix = PrixJournalier.objects.filter(titre=titre).order_by('-date')[:5]
     if prix:
         for p in prix:
             lines.append(
-                f"  {p.date} : {_decimal_to_str(p.cloture)} € | "
+                f"  {p.date} : {_decimal_to_str(p.cloture)} {sym} | "
                 f"RSI {_decimal_to_str(p.rsi_14)} | MACD {_decimal_to_str(p.macd_hist)} | "
                 f"MM50 {_decimal_to_str(p.mm_50)} | MM200 {_decimal_to_str(p.mm_200)} | "
                 f"Boll [{_decimal_to_str(p.boll_inf)}-{_decimal_to_str(p.boll_sup)}] | "
@@ -108,7 +112,7 @@ def _build_titre_detail(titre):
                      f"Croiss. BPA 3a {_decimal_to_str(fonda.croissance_bpa_3ans)}% | "
                      f"Div {_decimal_to_str(fonda.rendement_dividende)}% | "
                      f"Consensus {fonda.consensus or 'N/A'} ({fonda.nb_analystes or 0} analystes) | "
-                     f"Objectif {_decimal_to_str(fonda.objectif_cours_moyen)} € | "
+                     f"Objectif {_decimal_to_str(fonda.objectif_cours_moyen)} {sym} | "
                      f"Score qualité {_decimal_to_str(fonda.score_qualite)}/10")
 
     # Sentiment récent
@@ -158,11 +162,12 @@ def _build_titre_summary(titre):
     sentiment = ScoreSentiment.objects.filter(titre=titre, source='global').order_by('-date').first()
     sent_str = f"{_decimal_to_str(sentiment.score)} ({sentiment.label})" if sentiment else "N/A"
 
+    sym = titre.symbole_devise
     pos = ""
     if titre.nb_actions and titre.nb_actions > 0:
-        pos = f" | {titre.nb_actions} actions, PV/MV {_decimal_to_str(titre.plus_moins_value)} €"
+        pos = f" | {titre.nb_actions} actions, PV/MV {_decimal_to_str(titre.plus_moins_value)} {sym}"
 
-    return (f"  {titre.nom_court or titre.nom} ({titre.ticker}) : {cours} € "
+    return (f"  {titre.nom_court or titre.nom} ({titre.ticker}) : {cours} {sym} "
             f"(var {variation}%) | RSI {rsi} | Sentiment {sent_str}{pos}")
 
 
@@ -176,18 +181,22 @@ def _build_portfolio_context():
     if not titres.exists():
         return "## Portefeuille\nAucun titre en portefeuille."
 
+    from app.services.devises import convertir_en_eur
+
     lines = ["## Portefeuille"]
-    valeur_totale = Decimal('0')
+    valeur_totale = Decimal('0')   # converti en EUR pour un total homogène (PEA EUR + CTO USD…)
     pv_totale = Decimal('0')
+    multi_devises = set()
 
     for t in titres:
-        val_pos = t.valeur_position or Decimal('0')
-        pv = t.plus_moins_value or Decimal('0')
-        valeur_totale += val_pos
-        pv_totale += pv
+        multi_devises.add(t.devise or 'EUR')
+        valeur_totale += convertir_en_eur(t.valeur_position or Decimal('0'), t.devise) or Decimal('0')
+        pv_totale += convertir_en_eur(t.plus_moins_value or Decimal('0'), t.devise) or Decimal('0')
         lines.append(_build_titre_summary(t))
 
-    lines.append(f"  TOTAL : {_decimal_to_str(valeur_totale)} € | PV/MV globale : {_decimal_to_str(pv_totale)} €")
+    note = " (converti en EUR)" if multi_devises - {'EUR'} else ""
+    lines.append(f"  TOTAL : {_decimal_to_str(valeur_totale)} €{note} | "
+                 f"PV/MV globale : {_decimal_to_str(pv_totale)} €{note}")
     return "\n".join(lines)
 
 
